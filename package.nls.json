@@ -1,0 +1,9 @@
+{
+  "command.category": "Recent Copilot Chat ID",
+  "command.refresh.title": "Refresh",
+  "command.copyRecent.title": "Copy Recent ID",
+  "command.showSessions.title": "Show Saved IDs",
+  "command.showOutput.title": "Show Output",
+  "configuration.title": "Recent Copilot Chat ID",
+  "configuration.enabled.description": "Enable read-only filename scanning of local Copilot Chat session storage on this machine. This setting is not synced, and chat content is never read."
+}

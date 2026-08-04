@@ -1,0 +1,17 @@
+.github/**
+.vscode/**
+src/**
+test/**
+research/**
+node_modules/**
+artifacts/**
+scripts/**
+out/test/**
+**/*.map
+!l10n/**
+!package.nls*.json
+.gitignore
+.nvmrc
+AGENTS.md
+package-lock.json
+tsconfig.json

@@ -1,0 +1,9 @@
+{
+  "command.category": "最近の Copilot Chat ID",
+  "command.refresh.title": "再スキャン",
+  "command.copyRecent.title": "最近の ID をコピー",
+  "command.showSessions.title": "保存済み ID を表示",
+  "command.showOutput.title": "ログを表示",
+  "configuration.title": "最近の Copilot Chat ID",
+  "configuration.enabled.description": "この端末のローカル Copilot Chat セッション保存領域を、ファイル名だけ読み取りで走査します。この設定は同期されず、チャット本文も読み取りません。"
+}
