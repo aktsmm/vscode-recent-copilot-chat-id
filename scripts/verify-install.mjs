@@ -25,7 +25,8 @@ const { stdout } = await runVSCodeCommand(
   options,
 );
 
-const expected = `${manifest.publisher}.${manifest.name}@${manifest.version}`.toLowerCase();
+const expected =
+  `${manifest.publisher}.${manifest.name}@${manifest.version}`.toLowerCase();
 const installed = stdout
   .split(/\r?\n/)
   .map((line) => line.trim().toLowerCase())

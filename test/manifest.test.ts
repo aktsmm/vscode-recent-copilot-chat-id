@@ -56,7 +56,10 @@ test("runtime source keeps the filename-only privacy boundary", () => {
     source,
     /fetch\(|from ["']node:(?:http|https|net|tls|child_process)["']/,
   );
-  assert.match(source, /Recent saved session UUID prefix: \$\{shortenSessionId/);
+  assert.match(
+    source,
+    /Recent saved session UUID prefix: \$\{shortenSessionId/,
+  );
   assert.doesNotMatch(source, /Recent saved session UUID: \$\{this\.sessions/);
 });
 
@@ -80,7 +83,10 @@ test("status bar updates flow through the accessible renderer", () => {
   assert.match(source, /statusBar\.accessibilityInformation = \{ label:/);
   assert.match(source, /createOutputChannel\(\s*vscode\.l10n\.t\(/);
   assert.match(source, /Intl\.DateTimeFormat\(vscode\.env\.language/);
-  assert.doesNotMatch(source, /context\.subscriptions\.push\(\s*this\.statusBar/);
+  assert.doesNotMatch(
+    source,
+    /context\.subscriptions\.push\(\s*this\.statusBar/,
+  );
   assert.doesNotMatch(source, /context\.subscriptions\.push\(output/);
   assert.match(source, /this\.output\.dispose\(\)/);
   assert.equal(source.match(/clipboard\.writeText\(/g)?.length, 1);
@@ -145,7 +151,10 @@ test("session storage resolves for workspace and empty windows", () => {
   assert.match(runner, /\[\[extensionDevelopmentPath\], \[\]\]/);
   assert.match(runner, /downloadAndUnzipVSCode/);
   assert.match(runner, /win32VersionedUpdate = false/);
-  assert.match(runner, /Refusing to modify a VS Code executable outside the test cache/);
+  assert.match(
+    runner,
+    /Refusing to modify a VS Code executable outside the test cache/,
+  );
   assert.match(runner, /Expected one test product\.json/);
 });
 
@@ -182,7 +191,10 @@ test("packaging derives the VSIX filename from package metadata", () => {
     path.join(ROOT, "scripts", "package-extension.mjs"),
     "utf8",
   );
-  assert.match(packager, /`\$\{manifest\.name\}-\$\{manifest\.version\}\.vsix`/);
+  assert.match(
+    packager,
+    /`\$\{manifest\.name\}-\$\{manifest\.version\}\.vsix`/,
+  );
   assert.match(packager, /process\.env\.npm_execpath/);
   assert.match(packager, /spawnSync\(\s*process\.execPath/);
   assert.match(packager, /--package=@vscode\/vsce@3\.9\.2/);
@@ -223,10 +235,7 @@ test("the English and Japanese readmes link to each other", () => {
       readme,
       /marketplace\.visualstudio\.com\/items\?itemName=yamapan\.ag-show-session-id/,
     );
-    assert.match(
-      readme,
-      /github\.com\/aktsmm\/vscode-recent-copilot-chat-id/,
-    );
+    assert.match(readme, /github\.com\/aktsmm\/vscode-recent-copilot-chat-id/);
     assert.doesNotMatch(readme, /aktsmm\.ag-show-session-id|UNLICENSED/);
   }
 

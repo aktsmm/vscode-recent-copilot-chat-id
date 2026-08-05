@@ -54,7 +54,9 @@ function readEntries() {
     const localOffset = archive.readUInt32LE(offset + 42);
     const nextOffset = offset + 46 + nameLength + extraLength + commentLength;
     if (nextOffset > centralEnd) {
-      throw new Error(`Central-directory fields exceed archive bounds at ${offset}.`);
+      throw new Error(
+        `Central-directory fields exceed archive bounds at ${offset}.`,
+      );
     }
     const name = archive
       .subarray(offset + 46, offset + 46 + nameLength)
@@ -98,17 +100,16 @@ function readEntry(entries, name) {
   if (dataOffset < entry.localOffset || dataEnd > archive.length) {
     throw new Error(`Compressed data exceeds VSIX bounds: ${name}`);
   }
-  const compressed = archive.subarray(
-    dataOffset,
-    dataEnd,
-  );
+  const compressed = archive.subarray(dataOffset, dataEnd);
   const data =
     entry.method === 0
       ? compressed
       : entry.method === 8
         ? inflateRawSync(compressed)
         : (() => {
-            throw new Error(`Unsupported compression method ${entry.method}: ${name}`);
+            throw new Error(
+              `Unsupported compression method ${entry.method}: ${name}`,
+            );
           })();
 
   if (data.length !== entry.uncompressedSize) {
@@ -151,7 +152,9 @@ if (
   packagedManifest.name !== sourceManifest.name ||
   packagedManifest.version !== sourceManifest.version
 ) {
-  throw new Error("Packaged manifest name/version does not match the source manifest.");
+  throw new Error(
+    "Packaged manifest name/version does not match the source manifest.",
+  );
 }
 if (packagedManifest.icon !== "images/icon.png") {
   throw new Error("Packaged manifest icon path is incorrect.");
@@ -164,16 +167,26 @@ if (
   throw new Error("Packaged opt-in setting must remain machine-scoped.");
 }
 if (packagedManifest.enabledApiProposals !== undefined) {
-  throw new Error("Proposed APIs must not be enabled in this stable extension.");
+  throw new Error(
+    "Proposed APIs must not be enabled in this stable extension.",
+  );
 }
 
-const englishReadme = readEntry(entries, "extension/readme.md").toString("utf8");
-const japaneseReadme = readEntry(entries, "extension/README.ja.md").toString("utf8");
+const englishReadme = readEntry(entries, "extension/readme.md").toString(
+  "utf8",
+);
+const japaneseReadme = readEntry(entries, "extension/README.ja.md").toString(
+  "utf8",
+);
 if (!/href="[^"]*README\.ja\.md"/.test(englishReadme)) {
-  throw new Error("English README does not link to the packaged Japanese README.");
+  throw new Error(
+    "English README does not link to the packaged Japanese README.",
+  );
 }
 if (!/href="[^"]*README\.md"/.test(japaneseReadme)) {
-  throw new Error("Japanese README does not link to the packaged English README.");
+  throw new Error(
+    "Japanese README does not link to the packaged English README.",
+  );
 }
 
 const icon = readEntry(entries, "extension/images/icon.png");

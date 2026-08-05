@@ -2,7 +2,9 @@ import * as assert from "node:assert/strict";
 import * as vscode from "vscode";
 
 export async function run(): Promise<void> {
-  const extension = vscode.extensions.getExtension("yamapan.ag-show-session-id");
+  const extension = vscode.extensions.getExtension(
+    "yamapan.ag-show-session-id",
+  );
   assert.ok(extension, "Extension is not installed in the development host");
 
   await extension.activate();
