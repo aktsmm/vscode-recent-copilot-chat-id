@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +21,11 @@ const output = path.join(
 );
 
 mkdirSync(path.dirname(output), { recursive: true });
+for (const name of readdirSync(path.dirname(output))) {
+  if (name.endsWith(".vsix") && path.join(path.dirname(output), name) !== output) {
+    rmSync(path.join(path.dirname(output), name), { force: true });
+  }
+}
 
 const npmExecPath = process.env.npm_execpath;
 if (!npmExecPath) {

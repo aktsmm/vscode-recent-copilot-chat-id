@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inflateRawSync } from "node:zlib";
@@ -15,6 +15,12 @@ const defaultVsix = path.join(
 );
 const vsixPath = path.resolve(root, process.argv[2] ?? defaultVsix);
 const archive = readFileSync(vsixPath);
+const siblingVsix = readdirSync(path.dirname(vsixPath)).filter((name) =>
+  name.endsWith(".vsix"),
+);
+if (siblingVsix.length !== 1 || siblingVsix[0] !== path.basename(vsixPath)) {
+  throw new Error(`Stale VSIX artifacts found: ${siblingVsix.join(", ")}`);
+}
 
 function findEndOfCentralDirectory() {
   const minimum = Math.max(0, archive.length - 65_557);
@@ -122,14 +128,22 @@ const entries = readEntries();
 const expected = [
   "[Content_Types].xml",
   "extension.vsixmanifest",
+  "extension/changelog.md",
   "extension/README.ja.md",
   "extension/LICENSE.txt",
   "extension/images/icon.png",
+  "extension/images/sessions-activity.svg",
   "extension/l10n/bundle.l10n.ja.json",
   "extension/out/src/copy-session.js",
   "extension/out/src/extension.js",
+  "extension/out/src/session-alias-store.js",
+  "extension/out/src/session-index.js",
+  "extension/out/src/session-model.js",
   "extension/out/src/session-scanner.js",
+  "extension/out/src/session-tree-model.js",
+  "extension/out/src/session-tree.js",
   "extension/out/src/status-presentation.js",
+  "extension/out/src/visible-refresh.js",
   "extension/package.json",
   "extension/package.nls.ja.json",
   "extension/package.nls.json",
@@ -159,12 +173,27 @@ if (
 if (packagedManifest.icon !== "images/icon.png") {
   throw new Error("Packaged manifest icon path is incorrect.");
 }
+if (packagedManifest.preview !== true) {
+  throw new Error("Packaged extension must remain marked as preview.");
+}
 if (
   packagedManifest.contributes.configuration.properties[
     "agShowSessionId.enabled"
   ].scope !== "machine"
 ) {
   throw new Error("Packaged opt-in setting must remain machine-scoped.");
+}
+if (
+  packagedManifest.contributes.configuration.properties[
+    "agShowSessionId.readTitles"
+  ].default !== false ||
+  packagedManifest.contributes.configuration.properties[
+    "agShowSessionId.readTitles"
+  ].scope !== "machine"
+) {
+  throw new Error(
+    "Packaged title metadata opt-in must default off and remain machine-scoped.",
+  );
 }
 if (packagedManifest.enabledApiProposals !== undefined) {
   throw new Error(

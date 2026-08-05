@@ -3,6 +3,7 @@ import {
   SavedSession,
   shortenSessionId,
 } from "./session-scanner";
+import { SessionRecord, truncateStatusTitle } from "./session-model";
 
 export type RecentChatStatusKind =
   | "recent"
@@ -90,6 +91,45 @@ export function describeSessionStatus(
       "Most recently saved local session: `{0}`\n\nThis is not guaranteed to be the active chat session.\n\n{1}\n\nSelect to copy the full ID.",
       recent.id,
       savedCount,
+    ),
+  };
+}
+
+export function describeRecordStatus(
+  records: readonly SessionRecord[],
+  t: Translate = passthrough,
+): RecentChatStatus {
+  if (records.length === 0) {
+    return describeSessionStatus([], t);
+  }
+  if (isMostRecentAmbiguous(records)) {
+    const status = describeSessionStatus(records, t);
+    return {
+      ...status,
+      ariaLabel: t(
+        "Multiple Copilot Chat sessions share the latest save time. Activate to open the session list.",
+      ),
+      tooltip: t(
+        "Multiple saved sessions have the same latest timestamp.\n\n{0}\n\nSelect to open the session list.",
+        describeCount(records.length, t),
+      ),
+    };
+  }
+
+  const recent = records[0];
+  const shortTitle = truncateStatusTitle(recent.displayTitle);
+  return {
+    kind: "recent",
+    text: `${RECENT_ICON} ${t("Recent: {0}", shortTitle)}`,
+    ariaLabel: t(
+      "Most recently saved Copilot Chat session {0}. Activate to show it in the session list.",
+      recent.displayTitle,
+    ),
+    tooltip: t(
+      "{0}\n\nSession ID: `{1}`\n\nThis is not guaranteed to be the active chat session.\n\n{2}\n\nSelect to show it in the session list.",
+      recent.displayTitle,
+      recent.id,
+      describeCount(records.length, t),
     ),
   };
 }

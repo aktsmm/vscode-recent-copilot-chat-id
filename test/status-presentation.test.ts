@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  describeRecordStatus,
   describeSessionStatus,
   describeUnavailableStatus,
   RecentChatStatus,
@@ -91,4 +92,21 @@ test("only the recent status exposes a full session ID", () => {
     new RegExp(FIRST_ID),
   );
   assert.doesNotMatch(describeSessionStatus([]).tooltip, new RegExp(FIRST_ID));
+});
+
+test("record status shows the title and opens the session list", () => {
+  const status = describeRecordStatus([
+    {
+      id: FIRST_ID,
+      modifiedAt: 300,
+      displayTitle: "Authentication failure",
+      titleSource: "metadata",
+    },
+  ]);
+  assert.equal(
+    status.text,
+    "$(comment-discussion) Recent: Authentication failure",
+  );
+  assert.match(status.tooltip, /Select to show it in the session list/);
+  assert.match(status.ariaLabel, /Activate to show it in the session list/);
 });

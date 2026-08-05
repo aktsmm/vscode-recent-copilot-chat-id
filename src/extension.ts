@@ -1,5 +1,20 @@
 import * as vscode from "vscode";
+import path from "node:path";
 import { copySessionIdWithRecovery } from "./copy-session";
+import { SessionAliasStore } from "./session-alias-store";
+import {
+  readSessionIndex,
+  resolveSessionIndexPath,
+    SESSION_INDEX_DATABASE_GLOB,
+  SessionIndexMetadata,
+} from "./session-index";
+import {
+  buildSessionRecords,
+  MAX_SESSION_ALIAS_LENGTH,
+  normalizeSessionAlias,
+  selectSessionRecord,
+  SessionRecord,
+} from "./session-model";
 import {
   buildSavedSessions,
   isMostRecentAmbiguous,
@@ -10,25 +25,41 @@ import {
   upsertSavedSession,
 } from "./session-scanner";
 import {
-  describeSessionStatus,
+  describeRecordStatus,
   describeUnavailableStatus,
   RecentChatStatus,
   RecentChatStatusKind,
 } from "./status-presentation";
+import {
+  SessionNode,
+  SessionTreeNode,
+  SessionTreeProvider,
+} from "./session-tree";
+import { VisibleRefreshScheduler } from "./visible-refresh";
 
 const CONFIG_SECTION = "agShowSessionId";
 const ENABLED_SETTING = "enabled";
+const READ_TITLES_SETTING = "readTitles";
 const INTRO_SHOWN_KEY = "agShowSessionId.introShown";
+const VIEW_ID = "agShowSessionId.sessionsView";
 const COMMANDS = {
   refresh: "agShowSessionId.refresh",
   copyRecent: "agShowSessionId.copyRecent",
   showSessions: "agShowSessionId.showSessions",
   showOutput: "agShowSessionId.showOutput",
+  openView: "agShowSessionId.openView",
+  copySession: "agShowSessionId.copySession",
+  showDetails: "agShowSessionId.showDetails",
+  setAlias: "agShowSessionId.setAlias",
+  clearAlias: "agShowSessionId.clearAlias",
+  openSettings: "agShowSessionId.openSettings",
+  enable: "agShowSessionId.enable",
+  enableTitles: "agShowSessionId.enableTitles",
 } as const;
 const STATUS_COMMANDS: Record<RecentChatStatusKind, string> = {
-  recent: COMMANDS.copyRecent,
-  ambiguous: COMMANDS.showSessions,
-  empty: COMMANDS.showSessions,
+  recent: COMMANDS.openView,
+  ambiguous: COMMANDS.openView,
+  empty: COMMANDS.openView,
   unavailable: COMMANDS.showOutput,
 };
 
@@ -54,6 +85,13 @@ class RecentChatController implements vscode.Disposable {
     100,
   );
   private sessions: SavedSession[] = [];
+  private records: SessionRecord[] = [];
+  private readonly aliasStore: SessionAliasStore;
+  private readonly treeProvider = new SessionTreeProvider();
+  private readonly treeView: vscode.TreeView<SessionTreeNode>;
+  private readonly relativeTimeScheduler = new VisibleRefreshScheduler(() =>
+    this.treeProvider.refresh(),
+  );
   private scanAvailable = true;
   private scanGeneration = 0;
   private disposed = false;
@@ -61,13 +99,24 @@ class RecentChatController implements vscode.Disposable {
   private watcher: vscode.FileSystemWatcher | undefined;
   private watchedDirectory: string | undefined;
   private refreshTimer: NodeJS.Timeout | undefined;
+  private titleWatcher: vscode.FileSystemWatcher | undefined;
+  private watchedTitleDirectory: string | undefined;
+  private titleRefreshTimer: NodeJS.Timeout | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly output: vscode.LogOutputChannel,
   ) {
+    this.aliasStore = new SessionAliasStore(
+      context.globalState,
+      context.storageUri ? [context.workspaceState] : [],
+    );
+    this.treeView = vscode.window.createTreeView(VIEW_ID, {
+      treeDataProvider: this.treeProvider,
+      showCollapseAll: true,
+    });
     this.statusBar.name = vscode.l10n.t("Recent Copilot Chat ID");
-    this.statusBar.command = COMMANDS.copyRecent;
+    this.statusBar.command = COMMANDS.openView;
   }
 
   registerCommands(context: vscode.ExtensionContext): void {
@@ -84,14 +133,53 @@ class RecentChatController implements vscode.Disposable {
       vscode.commands.registerCommand(COMMANDS.showOutput, () => {
         this.output.show(true);
       }),
+      vscode.commands.registerCommand(
+        COMMANDS.openView,
+        async (node?: SessionTreeNode) => this.openView(node),
+      ),
+      vscode.commands.registerCommand(
+        COMMANDS.copySession,
+        async (node?: SessionTreeNode) => this.copyTreeSession(node),
+      ),
+      vscode.commands.registerCommand(
+        COMMANDS.showDetails,
+        async (node?: SessionTreeNode) => this.openView(node),
+      ),
+      vscode.commands.registerCommand(
+        COMMANDS.setAlias,
+        async (node?: SessionTreeNode) => this.setAlias(node),
+      ),
+      vscode.commands.registerCommand(
+        COMMANDS.clearAlias,
+        async (node?: SessionTreeNode) => this.clearAlias(node),
+      ),
+      vscode.commands.registerCommand(COMMANDS.openSettings, async () => {
+        await vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          CONFIG_SECTION,
+        );
+      }),
+      vscode.commands.registerCommand(COMMANDS.enable, async () => {
+        await vscode.workspace
+          .getConfiguration(CONFIG_SECTION)
+          .update(ENABLED_SETTING, true, vscode.ConfigurationTarget.Global);
+      }),
+      vscode.commands.registerCommand(COMMANDS.enableTitles, async () => {
+        await this.promptToEnableTitles();
+      }),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (
-          event.affectsConfiguration(`${CONFIG_SECTION}.${ENABLED_SETTING}`)
+          event.affectsConfiguration(`${CONFIG_SECTION}.${ENABLED_SETTING}`) ||
+          event.affectsConfiguration(`${CONFIG_SECTION}.${READ_TITLES_SETTING}`)
         ) {
           this.runSafely(() => this.refresh(false));
         }
       }),
+      this.treeView.onDidChangeVisibility((event) => {
+        this.relativeTimeScheduler.setVisible(event.visible);
+      }),
     );
+    this.relativeTimeScheduler.setVisible(this.treeView.visible);
   }
 
   /** Fire-and-forget entry point that keeps async failures out of unhandled rejections. */
@@ -108,6 +196,8 @@ class RecentChatController implements vscode.Disposable {
 
     if (!this.isEnabled()) {
       this.sessions = [];
+      this.scanAvailable = false;
+      await this.rebuildRecords();
       this.stopWatching();
       this.statusBar.hide();
       this.lastStatusKey = undefined;
@@ -122,6 +212,7 @@ class RecentChatController implements vscode.Disposable {
     if (!sessionDirectory) {
       this.sessions = [];
       this.scanAvailable = false;
+      await this.rebuildRecords();
       this.stopWatching();
       this.renderUnavailable();
       this.output.warn(
@@ -142,11 +233,15 @@ class RecentChatController implements vscode.Disposable {
     try {
       const sessions = await this.readSessions(sessionDirectory);
       if (this.isStale(generation)) {
+        if (!this.disposed) {
+          this.scheduleRefresh();
+        }
         return;
       }
 
       this.sessions = sessions;
       this.scanAvailable = true;
+      await this.rebuildRecords();
       this.renderSessions();
       this.logScanResult();
       if (notify) {
@@ -165,6 +260,7 @@ class RecentChatController implements vscode.Disposable {
 
       this.sessions = [];
       this.scanAvailable = false;
+      await this.rebuildRecords();
       this.renderUnavailable();
       this.output.warn(
         `Session filename scan unavailable: ${toSafeErrorCode(error)}.`,
@@ -183,6 +279,10 @@ class RecentChatController implements vscode.Disposable {
     this.disposed = true;
     this.scanGeneration++;
     this.stopWatching();
+    this.stopTitleWatching();
+    this.relativeTimeScheduler.dispose();
+    this.treeView.dispose();
+    this.treeProvider.dispose();
     this.statusBar.dispose();
     this.output.dispose();
   }
@@ -208,6 +308,62 @@ class RecentChatController implements vscode.Disposable {
     return vscode.workspace
       .getConfiguration(CONFIG_SECTION)
       .get<boolean>(ENABLED_SETTING, false);
+  }
+
+  private isTitleReadingEnabled(): boolean {
+    return vscode.workspace
+      .getConfiguration(CONFIG_SECTION)
+      .get<boolean>(READ_TITLES_SETTING, false);
+  }
+
+  private async rebuildRecords(): Promise<void> {
+    let index: ReadonlyMap<string, SessionIndexMetadata> = new Map();
+    if (this.isEnabled() && this.isTitleReadingEnabled()) {
+      const databasePath = resolveSessionIndexPath(
+        this.context.storageUri?.fsPath,
+        this.context.globalStorageUri.fsPath,
+      );
+      this.startTitleWatching(databasePath);
+      const result = readSessionIndex(
+        databasePath,
+        new Set(this.sessions.map((session) => session.id)),
+      );
+      index = result.entries;
+      if (result.errorCode && result.errorCode !== "IndexNotFound") {
+        this.output.warn(
+          `Session title metadata unavailable: ${result.errorCode}.`,
+        );
+      }
+    } else {
+      this.stopTitleWatching();
+    }
+
+    this.records = buildSessionRecords(
+      this.sessions,
+      index,
+      await this.getAliases(),
+    );
+    this.treeProvider.setRecords(this.records);
+    this.treeView.message =
+      this.isEnabled() && !this.isTitleReadingEnabled() && this.records.length > 0
+        ? vscode.l10n.t(
+            "Session titles are off. Use the eye button to enable title metadata, or set local titles from the context menu.",
+          )
+        : undefined;
+    await Promise.all(
+      [
+        ["agShowSessionId.hasSessions", this.records.length > 0],
+        ["agShowSessionId.scanAvailable", this.scanAvailable],
+      ].map(([key, value]) =>
+        vscode.commands.executeCommand("setContext", key, value),
+      ),
+    );
+  }
+
+  private async getAliases(): Promise<Readonly<Record<string, string>>> {
+    const ids = this.sessions.map((session) => session.id);
+    await this.aliasStore.migrate(ids);
+    return this.aliasStore.getAll(ids);
   }
 
   /** Empty windows keep chat sessions in global storage instead of workspace storage. */
@@ -271,7 +427,7 @@ class RecentChatController implements vscode.Disposable {
   }
 
   private renderSessions(): void {
-    this.applyStatus(describeSessionStatus(this.sessions, vscode.l10n.t));
+    this.applyStatus(describeRecordStatus(this.records, vscode.l10n.t));
   }
 
   private renderUnavailable(): void {
@@ -342,19 +498,20 @@ class RecentChatController implements vscode.Disposable {
       return;
     }
 
-    const latestSavedAt = this.sessions[0].modifiedAt;
-    const ambiguous = isMostRecentAmbiguous(this.sessions);
+    const latestSavedAt = this.records[0].modifiedAt;
+    const ambiguous = isMostRecentAmbiguous(this.records);
     const selected = await vscode.window.showQuickPick(
-      this.sessions.map((session) => ({
-        label: session.id,
+      this.records.map((session) => ({
+        label: session.displayTitle,
         description:
           session.modifiedAt === latestSavedAt
             ? ambiguous
-              ? vscode.l10n.t("tied for most recent")
-              : vscode.l10n.t("most recently saved")
-            : undefined,
+              ? `${shortenSessionId(session.id)} · ${vscode.l10n.t("tied for most recent")}`
+              : `${shortenSessionId(session.id)} · ${vscode.l10n.t("most recently saved")}`
+            : shortenSessionId(session.id),
         detail: vscode.l10n.t(
-          "Last saved {0}",
+          "Session ID: {0} · Last saved {1}",
+          session.id,
           new Intl.DateTimeFormat(vscode.env.language, {
             dateStyle: "medium",
             timeStyle: "short",
@@ -374,6 +531,120 @@ class RecentChatController implements vscode.Disposable {
     if (selected) {
       await this.copySessionId(selected.session.id);
     }
+  }
+
+  private async openView(node?: SessionTreeNode): Promise<void> {
+    if (!(await this.ensureEnabled())) {
+      return;
+    }
+    await this.refresh(false);
+    const requestedId = node?.kind === "session" ? node.record.id : undefined;
+    const record = selectSessionRecord(this.records, requestedId);
+    if (requestedId && !record) {
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t("That saved session is no longer available."),
+      );
+      return;
+    }
+    const sessionNode = record
+      ? this.treeProvider.getSessionNode(record.id)
+      : undefined;
+    if (sessionNode) {
+      await this.treeView.reveal(sessionNode, {
+        select: true,
+        focus: true,
+        expand: 1,
+      });
+    } else {
+      await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
+    }
+  }
+
+  private async copyTreeSession(node?: SessionTreeNode): Promise<void> {
+    const record = this.recordFromNode(node);
+    if (record) {
+      await this.copySessionId(record.id);
+      return;
+    }
+    await this.copyRecent();
+  }
+
+  private async setAlias(node?: SessionTreeNode): Promise<void> {
+    if (!(await this.ensureEnabled())) {
+      return;
+    }
+    const record = this.recordFromNode(node) ?? (await this.selectRecord());
+    if (!record) {
+      return;
+    }
+
+    const value = await vscode.window.showInputBox({
+      title: vscode.l10n.t("Set local title"),
+      prompt: vscode.l10n.t(
+        this.context.storageUri
+          ? "Stored in local state for this workspace. Leave empty to remove the local title."
+          : "Stored in local state for this empty-window profile. Leave empty to remove the local title.",
+      ),
+      value: record.alias ?? "",
+      placeHolder: record.displayTitle,
+      validateInput: (input) =>
+        input.trim().length > MAX_SESSION_ALIAS_LENGTH
+          ? vscode.l10n.t(
+              "Local titles must be {0} characters or fewer.",
+              String(MAX_SESSION_ALIAS_LENGTH),
+            )
+          : undefined,
+    });
+    if (value === undefined) {
+      return;
+    }
+
+    normalizeSessionAlias(value);
+    await this.aliasStore.set(record.id, value);
+    await this.rebuildRecords();
+    this.renderSessions();
+    const updated = this.treeProvider.getSessionNode(record.id);
+    if (updated) {
+      await this.treeView.reveal(updated, { select: true, focus: true });
+    }
+  }
+
+  private async clearAlias(node?: SessionTreeNode): Promise<void> {
+    const record = this.recordFromNode(node) ?? (await this.selectRecord());
+    if (!record?.alias) {
+      return;
+    }
+    await this.aliasStore.clear(record.id);
+    await this.rebuildRecords();
+    this.renderSessions();
+  }
+
+  private async selectRecord(): Promise<SessionRecord | undefined> {
+    if (this.records.length === 0) {
+      await this.reportNoSessions();
+      return undefined;
+    }
+    const selected = await vscode.window.showQuickPick(
+      this.records.map((record) => ({
+        label: record.displayTitle,
+        description: shortenSessionId(record.id),
+        record,
+      })),
+      {
+        title: vscode.l10n.t("Saved Copilot Chat sessions"),
+        placeHolder: vscode.l10n.t("Select a session"),
+        matchOnDescription: true,
+      },
+    );
+    return selected?.record;
+  }
+
+  private recordFromNode(
+    node: SessionTreeNode | undefined,
+  ): SessionRecord | undefined {
+    return node?.kind === "session"
+      ? this.records.find((record) => record.id === node.record.id)
+      : undefined;
   }
 
   private async copySessionId(id: string): Promise<void> {
@@ -450,6 +721,35 @@ class RecentChatController implements vscode.Disposable {
     return false;
   }
 
+  private async promptToEnableTitles(): Promise<boolean> {
+    if (this.isTitleReadingEnabled()) {
+      return true;
+    }
+    const enable = vscode.l10n.t("Enable titles");
+    const openSettings = vscode.l10n.t("Open Settings");
+    const action = await vscode.window.showInformationMessage(
+      vscode.l10n.t(
+        "Session titles can be derived from chat content. Read title metadata from VS Code's local index? Chat messages are never read.",
+      ),
+      enable,
+      openSettings,
+    );
+    if (action === enable) {
+      await vscode.workspace
+        .getConfiguration(CONFIG_SECTION)
+        .update(READ_TITLES_SETTING, true, vscode.ConfigurationTarget.Global);
+      await this.refresh(false);
+      return true;
+    }
+    if (action === openSettings) {
+      await vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        `${CONFIG_SECTION}.${READ_TITLES_SETTING}`,
+      );
+    }
+    return false;
+  }
+
   private startWatching(sessionDirectory: vscode.Uri): void {
     const directoryKey = sessionDirectory.toString();
     if (this.watcher && this.watchedDirectory === directoryKey) {
@@ -472,7 +772,7 @@ class RecentChatController implements vscode.Disposable {
 
   /** Session writes are frequent, so a single change updates one entry instead of re-scanning the folder. */
   private async applyChangedFile(uri: vscode.Uri): Promise<void> {
-    const generation = this.scanGeneration;
+    const generation = ++this.scanGeneration;
     const name = uri.path.split("/").pop() ?? "";
     if (
       !this.isEnabled() ||
@@ -485,6 +785,9 @@ class RecentChatController implements vscode.Disposable {
     try {
       const stat = await vscode.workspace.fs.stat(uri);
       if (this.isStale(generation)) {
+        if (!this.disposed) {
+          this.scheduleRefresh();
+        }
         return;
       }
 
@@ -492,6 +795,7 @@ class RecentChatController implements vscode.Disposable {
         name,
         modifiedAt: stat.mtime,
       });
+      await this.rebuildRecords();
       this.scanAvailable = true;
       this.renderSessions();
     } catch {
@@ -500,12 +804,17 @@ class RecentChatController implements vscode.Disposable {
   }
 
   private scheduleRefresh(): void {
+    if (this.disposed) {
+      return;
+    }
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
     }
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = undefined;
-      this.runSafely(() => this.refresh(false));
+      if (!this.disposed) {
+        this.runSafely(() => this.refresh(false));
+      }
     }, 200);
   }
 
@@ -518,6 +827,52 @@ class RecentChatController implements vscode.Disposable {
     this.watcher = undefined;
     this.watchedDirectory = undefined;
   }
+
+  private startTitleWatching(databasePath: string): void {
+    const directory = vscode.Uri.file(path.dirname(databasePath));
+    const directoryKey = directory.toString();
+    if (this.titleWatcher && this.watchedTitleDirectory === directoryKey) {
+      return;
+    }
+
+    this.stopTitleWatching();
+    this.watchedTitleDirectory = directoryKey;
+    this.titleWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(directory, SESSION_INDEX_DATABASE_GLOB),
+    );
+    this.titleWatcher.onDidCreate(() => this.scheduleTitleRefresh());
+    this.titleWatcher.onDidChange(() => this.scheduleTitleRefresh());
+    this.titleWatcher.onDidDelete(() => this.scheduleTitleRefresh());
+  }
+
+  private scheduleTitleRefresh(): void {
+    if (this.disposed || !this.isTitleReadingEnabled()) {
+      return;
+    }
+    if (this.titleRefreshTimer) {
+      clearTimeout(this.titleRefreshTimer);
+    }
+    this.titleRefreshTimer = setTimeout(() => {
+      this.titleRefreshTimer = undefined;
+      if (!this.disposed && this.isTitleReadingEnabled()) {
+        this.runSafely(async () => {
+          await this.rebuildRecords();
+          this.renderSessions();
+        });
+      }
+    }, 250);
+  }
+
+  private stopTitleWatching(): void {
+    if (this.titleRefreshTimer) {
+      clearTimeout(this.titleRefreshTimer);
+      this.titleRefreshTimer = undefined;
+    }
+    this.titleWatcher?.dispose();
+    this.titleWatcher = undefined;
+    this.watchedTitleDirectory = undefined;
+  }
+
 
   private logScanResult(): void {
     if (this.sessions.length === 0) {

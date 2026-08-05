@@ -32,10 +32,14 @@ This extension shows a **recently saved** session ID. It does not claim to ident
 
 ## Features
 
-- Status bar: `Recent Chat: <short UUID>`, with a screen reader label on every state
+- Dedicated **Recent Chat Sessions** Activity Bar view
+- Session rows show a local title or VS Code title, short ID, and relative save time
+- Expand a row to inspect the full ID, saved time, and title source
+- Inline and right-click actions to copy IDs or set/clear a local title
+- Status bar: `Recent: <title or short UUID>`; selecting it reveals the session in the browser
 - Tooltip shows how many session IDs are saved in the window
 - Copy the full recent UUID
-- List saved UUIDs and select one to copy, searchable by save time
+- Search saved sessions by title, full/short ID, or saved time
 - Manually refresh the filename scan
 - Refresh automatically when session files change
 - Log diagnostics to the `Recent Copilot Chat ID` Output Channel
@@ -64,34 +68,42 @@ Filename scanning is disabled by default. The extension offers to turn it on onc
 The extension then reads only `.json` and `.jsonl` **filenames** from the current window's local `chatSessions` storage directory. It reads file modification times for ordering.
 The opt-in setting is machine-scoped and is not synchronized to other devices.
 
+Session titles are a separate opt-in. Enable `agShowSessionId.readTitles` from the view toolbar or Settings to read only the `chat.ChatSessionStore.index` entry from VS Code's local read-only state database. Titles can be derived from chat content, remain in memory only, and are never written to logs. Chat messages and JSONL contents are never read.
+
+Display title precedence is: **local title > VS Code metadata title > Session `<short ID>`**. Local titles persist by session ID in the local VS Code profile, follow the session between empty and workspace windows, are not synchronized, and never modify Copilot Chat storage. Early 0.1 development aliases are migrated automatically.
+
 ## Commands
 
-| Command                                  | Purpose                                    |
-| ---------------------------------------- | ------------------------------------------ |
-| `Recent Copilot Chat ID: Refresh`        | Scan saved session filenames again         |
-| `Recent Copilot Chat ID: Copy Recent ID` | Copy the most recently saved UUID          |
-| `Recent Copilot Chat ID: Show Saved IDs` | List saved UUIDs and copy the selected one |
-| `Recent Copilot Chat ID: Show Output`    | Open the diagnostic Output Channel         |
+| Command                                        | Purpose                                       |
+| ---------------------------------------------- | --------------------------------------------- |
+| `Recent Copilot Chat ID: Refresh`              | Scan saved session filenames again            |
+| `Recent Copilot Chat ID: Copy Recent ID`       | Copy the most recently saved UUID             |
+| `Recent Copilot Chat ID: Show Saved IDs`       | List saved UUIDs and copy the selected one    |
+| `Recent Copilot Chat ID: Show Output`          | Open the diagnostic Output Channel            |
+| `Recent Copilot Chat ID: Open Session Browser` | Reveal the recent session in the Activity Bar |
+| `Recent Copilot Chat ID: Show Details`         | Reveal and expand the selected session        |
+| `Recent Copilot Chat ID: Set Local Title`      | Add or rename a local-only session title      |
 
-All commands appear in the Command Palette under the **Recent Copilot Chat ID** category.
+Global commands appear in the Command Palette under the **Recent Copilot Chat ID** category. Session-specific copy, details, and local-title actions appear on session rows in the Activity Bar.
 
 ## Status bar states
 
-| State          | Meaning                                             | Select to        |
-| -------------- | --------------------------------------------------- | ---------------- |
-| `<short UUID>` | One session was saved most recently                 | Copy the full ID |
-| `ambiguous`    | Several sessions share the latest save time         | Choose an ID     |
-| `none`         | No saved session filenames were found               | Review saved IDs |
-| `unavailable`  | Local session storage cannot be read in this window | Open the log     |
+| State         | Meaning                                             | Select to                        |
+| ------------- | --------------------------------------------------- | -------------------------------- |
+| `<title>`     | One session was saved most recently                 | Reveal it in the session browser |
+| `ambiguous`   | Several sessions share the latest save time         | Open the session browser         |
+| `none`        | No saved session filenames were found               | Open the session browser         |
+| `unavailable` | Local session storage cannot be read in this window | Open the log                     |
 
 ## Privacy
 
 - No telemetry or network access
 - No chat JSON/JSONL content reads
-- No debug log or `state.vscdb` reads
+- No debug log reads
 - No session file writes
-- No prompt, response, title, reference, or code collection
+- No prompt, response, reference, or code collection
 - Diagnostic logs include only shortened ID prefixes, never full session IDs
+- Optional title metadata reads one bounded index entry and retains only session ID, title, and last saved time in memory
 
 ## Compatibility
 
@@ -100,7 +112,8 @@ All commands appear in the Command Palette under the **Recent Copilot Chat ID** 
 - Desktop local windows only
 - Empty windows (no folder open) read the separate global chat session storage
 - Virtual workspaces, VS Code for the Web, and some Remote/WSL layouts can report `unavailable`
-- This PoC depends on an undocumented internal storage location and degrades without modifying data when that layout is unavailable
+- This extension depends on an undocumented internal storage location and degrades without modifying data when that layout is unavailable
+- VS Code does not expose a stable API to add actions to built-in Copilot Chat session rows, so this extension uses its own Activity Bar view
 
 The source workspace includes the API and storage analysis at `research/20260805-copilot-chat-session-id-extension.md`.
 

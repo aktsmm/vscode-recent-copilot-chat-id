@@ -10,6 +10,7 @@ const manifest = JSON.parse(
 
 test("manifest exposes the Track A commands and opt-in setting", () => {
   assert.equal(manifest.publisher, "yamapan");
+  assert.equal(manifest.preview, true);
   assert.equal(manifest.license, "CC-BY-NC-SA-4.0");
   assert.equal(
     manifest.repository.url,
@@ -23,6 +24,14 @@ test("manifest exposes the Track A commands and opt-in setting", () => {
     "agShowSessionId.copyRecent",
     "agShowSessionId.showSessions",
     "agShowSessionId.showOutput",
+    "agShowSessionId.openView",
+    "agShowSessionId.copySession",
+    "agShowSessionId.showDetails",
+    "agShowSessionId.setAlias",
+    "agShowSessionId.clearAlias",
+    "agShowSessionId.openSettings",
+    "agShowSessionId.enable",
+    "agShowSessionId.enableTitles",
   ]);
   assert.equal(
     manifest.contributes.configuration.properties["agShowSessionId.enabled"]
@@ -34,11 +43,50 @@ test("manifest exposes the Track A commands and opt-in setting", () => {
       .scope,
     "machine",
   );
+  assert.equal(
+    manifest.contributes.configuration.properties["agShowSessionId.readTitles"]
+      .default,
+    false,
+  );
+  assert.equal(
+    manifest.contributes.configuration.properties["agShowSessionId.readTitles"]
+      .scope,
+    "machine",
+  );
+  assert.equal(
+    manifest.contributes.viewsContainers.activitybar[0].id,
+    "agShowSessionIdSessions",
+  );
+  assert.match(
+    manifest.contributes.viewsContainers.activitybar[0].id,
+    /^[A-Za-z0-9_-]+$/,
+  );
+  assert.equal(
+    manifest.contributes.views.agShowSessionIdSessions[0].id,
+    "agShowSessionId.sessionsView",
+  );
+  assert.equal(manifest.contributes.menus["view/title"].length, 4);
+  assert.equal(manifest.contributes.menus["view/item/context"].length, 4);
+  const activityIcon = readFileSync(
+    path.join(ROOT, "images", "sessions-activity.svg"),
+    "utf8",
+  );
+  assert.match(activityIcon, /stroke="currentColor"/);
+  assert.doesNotMatch(activityIcon, /#C5C5C5/i);
+  assert.equal(manifest.contributes.viewsWelcome.length, 3);
+  assert.match(
+    manifest.contributes.viewsWelcome[1].when,
+    /agShowSessionId\.scanAvailable/,
+  );
+  assert.match(
+    manifest.contributes.viewsWelcome[2].when,
+    /!agShowSessionId\.scanAvailable/,
+  );
   assert.deepEqual(manifest.extensionKind, ["ui"]);
   assert.equal(manifest.enabledApiProposals, undefined);
 });
 
-test("runtime source keeps the filename-only privacy boundary", () => {
+test("runtime source keeps the bounded metadata privacy boundary", () => {
   const sourceFiles = readdirSync(path.join(ROOT, "src")).filter((name) =>
     name.endsWith(".ts"),
   );
@@ -48,10 +96,7 @@ test("runtime source keeps the filename-only privacy boundary", () => {
   assert.match(source, /workspace\.fs\.readDirectory/);
   assert.match(source, /workspace\.fs\.stat/);
   assert.doesNotMatch(source, /workspace\.fs\.readFile/);
-  assert.doesNotMatch(
-    source,
-    /debug-logs|state\.vscdb|process\.env\.APPDATA|%APPDATA%/i,
-  );
+  assert.doesNotMatch(source, /debug-logs|process\.env\.APPDATA|%APPDATA%/i);
   assert.doesNotMatch(
     source,
     /fetch\(|from ["']node:(?:http|https|net|tls|child_process)["']/,
@@ -61,6 +106,31 @@ test("runtime source keeps the filename-only privacy boundary", () => {
     /Recent saved session UUID prefix: \$\{shortenSessionId/,
   );
   assert.doesNotMatch(source, /Recent saved session UUID: \$\{this\.sessions/);
+
+  const indexSource = readFileSync(
+    path.join(ROOT, "src", "session-index.ts"),
+    "utf8",
+  );
+  assert.equal(indexSource.match(/state\.vscdb/g)?.length, 2);
+  assert.match(
+    indexSource,
+    /new DatabaseSync\(databasePath, \{ readOnly: true \}\)/,
+  );
+  assert.match(indexSource, /SELECT value FROM ItemTable WHERE key = \?/);
+  assert.match(indexSource, /length\(CAST\(value AS BLOB\)\)/);
+  assert.match(indexSource, /MAX_SESSION_INDEX_BYTES/);
+  assert.match(indexSource, /MAX_SESSION_INDEX_ENTRIES/);
+  assert.match(indexSource, /MAX_SESSION_METADATA_TITLE_LENGTH/);
+  assert.match(indexSource, /CHAT_SESSION_INDEX_KEY/);
+  assert.doesNotMatch(indexSource, /(?:INSERT|UPDATE|DELETE|REPLACE)\s+/i);
+
+  for (const file of sourceFiles.filter(
+    (name) => name !== "session-index.ts",
+  )) {
+    const content = readFileSync(path.join(ROOT, "src", file), "utf8");
+    assert.doesNotMatch(content, /state\.vscdb|DatabaseSync|ItemTable/);
+  }
+  assert.match(indexSource, /SESSION_INDEX_DATABASE_GLOB = "state\.vscdb\*"/);
 });
 
 test("package lock resolves only from the public npm registry", () => {
@@ -83,6 +153,9 @@ test("status bar updates flow through the accessible renderer", () => {
   assert.match(source, /statusBar\.accessibilityInformation = \{ label:/);
   assert.match(source, /createOutputChannel\(\s*vscode\.l10n\.t\(/);
   assert.match(source, /Intl\.DateTimeFormat\(vscode\.env\.language/);
+  assert.match(source, /recent: COMMANDS\.openView/);
+  assert.doesNotMatch(source, /recent: COMMANDS\.copyRecent/);
+  assert.match(source, /this\.treeView\.reveal\(sessionNode/);
   assert.doesNotMatch(
     source,
     /context\.subscriptions\.push\(\s*this\.statusBar/,
@@ -90,7 +163,7 @@ test("status bar updates flow through the accessible renderer", () => {
   assert.doesNotMatch(source, /context\.subscriptions\.push\(output/);
   assert.match(source, /this\.output\.dispose\(\)/);
   assert.equal(source.match(/clipboard\.writeText\(/g)?.length, 1);
-  assert.equal(source.match(/copySessionId\(/g)?.length, 3);
+  assert.equal(source.match(/copySessionId\(/g)?.length, 4);
   assert.match(source, /copySessionIdWithRecovery\(id/);
 });
 
@@ -119,6 +192,14 @@ test("the opt-in intro is shown at most once per profile", () => {
   assert.match(source, /globalState\.update\(INTRO_SHOWN_KEY, true\)/);
 });
 
+test("local titles use profile-local state with workspace migration", () => {
+  const source = readFileSync(path.join(ROOT, "src", "extension.ts"), "utf8");
+  assert.match(source, /context\.globalState,/);
+  assert.match(source, /context\.storageUri \? \[context\.workspaceState\] : \[\]/);
+  assert.match(source, /this\.aliasStore\.migrate\(ids\)/);
+  assert.doesNotMatch(source, /setKeysForSync/);
+});
+
 test("session file changes update one entry instead of re-scanning", () => {
   const source = readFileSync(path.join(ROOT, "src", "extension.ts"), "utf8");
   assert.equal(
@@ -128,6 +209,10 @@ test("session file changes update one entry instead of re-scanning", () => {
   );
   assert.match(source, /upsertSavedSession\(this\.sessions/);
   assert.match(source, /if \(statusKey === this\.lastStatusKey\)/);
+  assert.match(source, /const generation = \+\+this\.scanGeneration;/);
+  assert.match(source, /this\.scheduleRefresh\(\)/);
+  assert.match(source, /SESSION_INDEX_DATABASE_GLOB/);
+  assert.match(source, /scheduleTitleRefresh/);
 });
 
 test("async scans discard stale results and stop after disposal", () => {
@@ -140,6 +225,15 @@ test("async scans discard stale results and stop after disposal", () => {
   assert.equal(source.match(/this\.isStale\(generation\)/g)?.length, 4);
   assert.doesNotMatch(source, /void this\.(refresh|applyChangedFile)\(/);
   assert.match(source, /if \(!this\.disposed\) \{\s*this\.output\.error/);
+  assert.match(source, /if \(this\.disposed\) \{\s*return;/);
+  assert.match(source, /this\.records\.find\(\(record\) => record\.id === node\.record\.id\)/);
+  assert.match(source, /new VisibleRefreshScheduler/);
+  assert.match(source, /setVisible\(this\.treeView\.visible\)/);
+  assert.match(source, /onDidChangeVisibility/);
+  assert.match(source, /selectSessionRecord\(this\.records, requestedId\)/);
+  assert.match(source, /if \(requestedId && !record\)/);
+  assert.doesNotMatch(source, /recordFromNode\(node\) \?\? this\.records\[0\]/);
+  assert.match(source, /That saved session is no longer available\./);
 });
 
 test("session storage resolves for workspace and empty windows", () => {
@@ -198,6 +292,7 @@ test("packaging derives the VSIX filename from package metadata", () => {
   assert.match(packager, /process\.env\.npm_execpath/);
   assert.match(packager, /spawnSync\(\s*process\.execPath/);
   assert.match(packager, /--package=@vscode\/vsce@3\.9\.2/);
+  assert.match(packager, /name\.endsWith\("\.vsix"\)/);
 
   const verifier = readFileSync(
     path.join(ROOT, "scripts", "verify-vsix.mjs"),
@@ -208,6 +303,7 @@ test("packaging derives the VSIX filename from package metadata", () => {
   assert.match(verifier, /machine-scoped/);
   assert.match(verifier, /Compressed data exceeds VSIX bounds/);
   assert.match(verifier, /central directory exceeds archive bounds/);
+  assert.match(verifier, /Stale VSIX artifacts found/);
 
   const installer = readFileSync(
     path.join(ROOT, "scripts", "verify-install.mjs"),

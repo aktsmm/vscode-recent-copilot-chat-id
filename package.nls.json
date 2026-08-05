@@ -4,6 +4,20 @@
   "command.copyRecent.title": "Copy Recent ID",
   "command.showSessions.title": "Show Saved IDs",
   "command.showOutput.title": "Show Output",
+  "command.openView.title": "Open Session Browser",
+  "command.copySession.title": "Copy Session ID",
+  "command.showDetails.title": "Show Details",
+  "command.setAlias.title": "Set Local Title",
+  "command.clearAlias.title": "Clear Local Title",
+  "command.openSettings.title": "Open Settings",
+  "command.enable.title": "Enable Filename Scanning",
+  "command.enableTitles.title": "Enable Session Titles",
+  "view.container.title": "Recent Chat Sessions",
+  "view.sessions.name": "Saved Sessions",
+  "view.welcome.disabled": "Filename scanning is off.\n[Enable](command:agShowSessionId.enable)\n[Open Settings](command:agShowSessionId.openSettings)",
+  "view.welcome.empty": "No saved Copilot Chat sessions were found.\n[Refresh](command:agShowSessionId.refresh)",
+  "view.welcome.unavailable": "Local session storage is unavailable in this window.\n[Open Log](command:agShowSessionId.showOutput)\n[Open Settings](command:agShowSessionId.openSettings)",
   "configuration.title": "Recent Copilot Chat ID",
-  "configuration.enabled.description": "Enable read-only filename scanning of local Copilot Chat session storage on this machine. This setting is not synced, and chat content is never read."
+  "configuration.enabled.description": "Enable read-only filename scanning of local Copilot Chat session storage on this machine. This setting is not synced, and chat content is never read.",
+  "configuration.readTitles.description": "Read session titles from VS Code's local chat index. Titles can be derived from chat content. Chat messages are never read, titles remain in memory only, and this setting is not synced."
 }

@@ -3,9 +3,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import {
+  describeRecordStatus,
   describeSessionStatus,
   describeUnavailableStatus,
 } from "../src/status-presentation";
+import { buildSessionTreeRows } from "../src/session-tree-model";
 
 const ROOT = path.resolve(__dirname, "../..");
 
@@ -45,7 +47,7 @@ test("manifest declares the runtime l10n bundle folder", () => {
 });
 
 test("every runtime l10n string has a Japanese translation", () => {
-  const source = readSource("extension.ts");
+  const source = ["extension.ts", "session-tree.ts"].map(readSource).join("\n");
   const runtimeStrings = [
     ...source.matchAll(/vscode\.l10n\.t\(\s*"((?:[^"\\]|\\.)*)"/g),
   ].map((match) => JSON.parse(`"${match[1]}"`) as string);
@@ -82,6 +84,30 @@ test("every status bar string has a Japanese translation", () => {
     collect,
   );
   describeUnavailableStatus(collect);
+  describeRecordStatus(
+    [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        modifiedAt: 300,
+        displayTitle: "Authentication failure",
+        titleSource: "metadata",
+      },
+    ],
+    collect,
+  );
+  buildSessionTreeRows(
+    [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        modifiedAt: 300,
+        displayTitle: "Authentication failure",
+        titleSource: "metadata",
+      },
+    ],
+    "en-US",
+    collect,
+    400,
+  );
 
   assert.ok(collected.length > 0);
   for (const message of collected) {

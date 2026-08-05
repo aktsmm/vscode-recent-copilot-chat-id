@@ -4,6 +4,20 @@
   "command.copyRecent.title": "最近の ID をコピー",
   "command.showSessions.title": "保存済み ID を表示",
   "command.showOutput.title": "ログを表示",
+  "command.openView.title": "セッションブラウザーを開く",
+  "command.copySession.title": "セッション ID をコピー",
+  "command.showDetails.title": "詳細を表示",
+  "command.setAlias.title": "ローカルタイトルを設定",
+  "command.clearAlias.title": "ローカルタイトルを削除",
+  "command.openSettings.title": "設定を開く",
+  "command.enable.title": "ファイル名の走査を有効化",
+  "command.enableTitles.title": "セッションタイトルを有効化",
+  "view.container.title": "最近の Chat セッション",
+  "view.sessions.name": "保存済みセッション",
+  "view.welcome.disabled": "ファイル名の走査は無効です。\n[有効にする](command:agShowSessionId.enable)\n[設定を開く](command:agShowSessionId.openSettings)",
+  "view.welcome.empty": "保存済みの Copilot Chat セッションは見つかりませんでした。\n[再スキャン](command:agShowSessionId.refresh)",
+  "view.welcome.unavailable": "このウィンドウではローカルのセッション保存領域を利用できません。\n[ログを開く](command:agShowSessionId.showOutput)\n[設定を開く](command:agShowSessionId.openSettings)",
   "configuration.title": "最近の Copilot Chat ID",
-  "configuration.enabled.description": "この端末のローカル Copilot Chat セッション保存領域を、ファイル名だけ読み取りで走査します。この設定は同期されず、チャット本文も読み取りません。"
+  "configuration.enabled.description": "この端末のローカル Copilot Chat セッション保存領域を、ファイル名だけ読み取りで走査します。この設定は同期されず、チャット本文も読み取りません。",
+  "configuration.readTitles.description": "VS Code のローカル Chat index からセッションタイトルを読み取ります。タイトルはチャット内容から派生する場合があります。チャットメッセージは読み取らず、タイトルはメモリ内だけに保持し、この設定も同期されません。"
 }
