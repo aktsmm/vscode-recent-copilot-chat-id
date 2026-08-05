@@ -156,7 +156,10 @@ test("parseSessionIndex rejects excessive entries and title lengths", () => {
     ]),
   );
   assert.throws(
-    () => parseSessionIndex(JSON.stringify({ version: 1, entries: excessiveEntries })),
+    () =>
+      parseSessionIndex(
+        JSON.stringify({ version: 1, entries: excessiveEntries }),
+      ),
     /TooManySessionIndexEntries/,
   );
 

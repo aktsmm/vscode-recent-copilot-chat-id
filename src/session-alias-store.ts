@@ -61,10 +61,7 @@ export class SessionAliasStore {
     }
   }
 
-  private readDirect(
-    state: AliasState,
-    id: string,
-  ): string | null | undefined {
+  private readDirect(state: AliasState, id: string): string | null | undefined {
     const missing = { missing: true };
     const value = state.get<unknown>(`${ALIAS_KEY_PREFIX}${id}`, missing);
     if (value === missing) {
@@ -73,7 +70,9 @@ export class SessionAliasStore {
     return typeof value === "string" ? value : null;
   }
 
-  private readLegacyAliases(state: AliasState): Readonly<Record<string, string>> {
+  private readLegacyAliases(
+    state: AliasState,
+  ): Readonly<Record<string, string>> {
     const value = state.get<unknown>(ALIASES_KEY, {});
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return {};

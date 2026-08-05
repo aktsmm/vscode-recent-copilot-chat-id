@@ -5,7 +5,7 @@ import { SessionAliasStore } from "./session-alias-store";
 import {
   readSessionIndex,
   resolveSessionIndexPath,
-    SESSION_INDEX_DATABASE_GLOB,
+  SESSION_INDEX_DATABASE_GLOB,
   SessionIndexMetadata,
 } from "./session-index";
 import {
@@ -345,7 +345,9 @@ class RecentChatController implements vscode.Disposable {
     );
     this.treeProvider.setRecords(this.records);
     this.treeView.message =
-      this.isEnabled() && !this.isTitleReadingEnabled() && this.records.length > 0
+      this.isEnabled() &&
+      !this.isTitleReadingEnabled() &&
+      this.records.length > 0
         ? vscode.l10n.t(
             "Session titles are off. Use the eye button to enable title metadata, or set local titles from the context menu.",
           )
@@ -872,7 +874,6 @@ class RecentChatController implements vscode.Disposable {
     this.titleWatcher = undefined;
     this.watchedTitleDirectory = undefined;
   }
-
 
   private logScanResult(): void {
     if (this.sessions.length === 0) {

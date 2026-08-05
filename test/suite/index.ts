@@ -52,7 +52,10 @@ function verifySessionTreeProvider(): void {
     const [session] = provider.getChildren();
     assert.equal(session.kind, "session");
     const item = provider.getTreeItem(session);
-    assert.equal(item.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
+    assert.equal(
+      item.collapsibleState,
+      vscode.TreeItemCollapsibleState.Collapsed,
+    );
     assert.equal(item.contextValue, "chatSession");
     assert.equal(item.id, "chat-session:11111111-1111-4111-8111-111111111111");
     assert.equal(item.command?.command, "agShowSessionId.showDetails");
@@ -69,7 +72,10 @@ function verifySessionTreeProvider(): void {
     ];
     for (const [index, detail] of details.entries()) {
       const detailItem = provider.getTreeItem(detail);
-      assert.equal(detailItem.collapsibleState, vscode.TreeItemCollapsibleState.None);
+      assert.equal(
+        detailItem.collapsibleState,
+        vscode.TreeItemCollapsibleState.None,
+      );
       assert.equal(detailItem.contextValue, "chatSessionDetail");
       assert.equal(detailItem.id, expectedDetailIds[index]);
       const parent = provider.getParent(detail);

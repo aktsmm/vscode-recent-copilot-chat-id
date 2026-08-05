@@ -22,7 +22,10 @@ const output = path.join(
 
 mkdirSync(path.dirname(output), { recursive: true });
 for (const name of readdirSync(path.dirname(output))) {
-  if (name.endsWith(".vsix") && path.join(path.dirname(output), name) !== output) {
+  if (
+    name.endsWith(".vsix") &&
+    path.join(path.dirname(output), name) !== output
+  ) {
     rmSync(path.join(path.dirname(output), name), { force: true });
   }
 }

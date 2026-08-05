@@ -195,7 +195,10 @@ test("the opt-in intro is shown at most once per profile", () => {
 test("local titles use profile-local state with workspace migration", () => {
   const source = readFileSync(path.join(ROOT, "src", "extension.ts"), "utf8");
   assert.match(source, /context\.globalState,/);
-  assert.match(source, /context\.storageUri \? \[context\.workspaceState\] : \[\]/);
+  assert.match(
+    source,
+    /context\.storageUri \? \[context\.workspaceState\] : \[\]/,
+  );
   assert.match(source, /this\.aliasStore\.migrate\(ids\)/);
   assert.doesNotMatch(source, /setKeysForSync/);
 });
@@ -226,7 +229,10 @@ test("async scans discard stale results and stop after disposal", () => {
   assert.doesNotMatch(source, /void this\.(refresh|applyChangedFile)\(/);
   assert.match(source, /if \(!this\.disposed\) \{\s*this\.output\.error/);
   assert.match(source, /if \(this\.disposed\) \{\s*return;/);
-  assert.match(source, /this\.records\.find\(\(record\) => record\.id === node\.record\.id\)/);
+  assert.match(
+    source,
+    /this\.records\.find\(\(record\) => record\.id === node\.record\.id\)/,
+  );
   assert.match(source, /new VisibleRefreshScheduler/);
   assert.match(source, /setVisible\(this\.treeView\.visible\)/);
   assert.match(source, /onDidChangeVisibility/);

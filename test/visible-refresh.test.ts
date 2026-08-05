@@ -29,7 +29,11 @@ class FakeTimers implements TimerPort {
 test("VisibleRefreshScheduler refreshes only while visible", () => {
   const timers = new FakeTimers();
   let refreshes = 0;
-  const scheduler = new VisibleRefreshScheduler(() => refreshes++, 60_000, timers);
+  const scheduler = new VisibleRefreshScheduler(
+    () => refreshes++,
+    60_000,
+    timers,
+  );
 
   scheduler.setVisible(false);
   assert.equal(timers.callbacks.size, 0);
@@ -48,7 +52,11 @@ test("VisibleRefreshScheduler refreshes only while visible", () => {
 test("VisibleRefreshScheduler cancels and stays stopped after disposal", () => {
   const timers = new FakeTimers();
   let refreshes = 0;
-  const scheduler = new VisibleRefreshScheduler(() => refreshes++, 60_000, timers);
+  const scheduler = new VisibleRefreshScheduler(
+    () => refreshes++,
+    60_000,
+    timers,
+  );
 
   scheduler.setVisible(true);
   scheduler.dispose();
@@ -75,10 +83,14 @@ test("VisibleRefreshScheduler updates a rendered relative-time description", () 
     );
   let description = buildSessionTreeRows([record], "en-US", translate, now)[0]
     .description;
-  const scheduler = new VisibleRefreshScheduler(() => {
-    description = buildSessionTreeRows([record], "en-US", translate, now)[0]
-      .description;
-  }, 60_000, timers);
+  const scheduler = new VisibleRefreshScheduler(
+    () => {
+      description = buildSessionTreeRows([record], "en-US", translate, now)[0]
+        .description;
+    },
+    60_000,
+    timers,
+  );
 
   assert.match(description, /1 minute ago$/);
   scheduler.setVisible(true);

@@ -87,10 +87,7 @@ test("metadata titles retain the full value but bound the display title", () => 
   const record = buildSessionRecords(
     sessions,
     new Map([
-      [
-        SESSION_ID,
-        { id: SESSION_ID, title: longTitle, lastMessageDate: 400 },
-      ],
+      [SESSION_ID, { id: SESSION_ID, title: longTitle, lastMessageDate: 400 }],
     ]),
     {},
   )[0];
