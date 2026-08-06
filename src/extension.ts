@@ -160,7 +160,8 @@ class RecentChatController implements vscode.Disposable {
       vscode.commands.registerCommand(
         COMMANDS.openInspector,
         async (node?: SessionTreeNode) => this.openInspector(node),
-      ),      vscode.commands.registerCommand(
+      ),
+      vscode.commands.registerCommand(
         COMMANDS.analyzeUsage,
         async (node?: SessionTreeNode) => this.analyzeUsage(node),
       ),
@@ -198,7 +199,9 @@ class RecentChatController implements vscode.Disposable {
           this.runSafely(() => this.refresh(false));
         }
         if (
-          event.affectsConfiguration(`${CONFIG_SECTION}.${READ_USAGE_SETTING}`) &&
+          event.affectsConfiguration(
+            `${CONFIG_SECTION}.${READ_USAGE_SETTING}`,
+          ) &&
           !this.isUsageReadingEnabled()
         ) {
           this.usageReader.clear();

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,8 +9,18 @@ import { verifyVersion } from "../scripts/verify-version.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-test("verifyVersion accepts the current untagged changelog version", () => {
-  assert.doesNotThrow(() => verifyVersion(ROOT, "0.2.0"));
+test("verifyVersion accepts an untagged changelog version", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "version-guard-untagged-"));
+  try {
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    writeFileSync(
+      path.join(root, "CHANGELOG.md"),
+      "# Change Log\n\n## 9.9.9 - Unreleased\n",
+    );
+    assert.doesNotThrow(() => verifyVersion(root, "9.9.9"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("verifyVersion rejects an existing release tag", () => {
@@ -26,10 +37,7 @@ test("verifyVersion rejects invalid changelog dates before packaging", () => {
       path.join(root, "CHANGELOG.md"),
       "# Change Log\n\n## 0.2.0 - 2026-02-31\n",
     );
-    assert.throws(
-      () => verifyVersion(root, "0.2.0"),
-      /invalid release date/,
-    );
+    assert.throws(() => verifyVersion(root, "0.2.0"), /invalid release date/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

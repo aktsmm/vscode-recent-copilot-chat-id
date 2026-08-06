@@ -150,26 +150,53 @@ async function verifySessionUsageReader(): Promise<void> {
     const flatPath = path.join(directory, `${sessionId}.json`);
     const logPath = path.join(directory, `${sessionId}.jsonl`);
     writeFileSync(flatPath, snapshot(sessionId, 3));
-    utimesSync(flatPath, new Date(Date.now() - 20_000), new Date(Date.now() - 20_000));
-    const flat = await reader.read(vscode.Uri.file(directory), sessionId, token);
+    utimesSync(
+      flatPath,
+      new Date(Date.now() - 20_000),
+      new Date(Date.now() - 20_000),
+    );
+    const flat = await reader.read(
+      vscode.Uri.file(directory),
+      sessionId,
+      token,
+    );
     assert.equal(flat.kind, "ok");
     assert.equal(flat.kind === "ok" ? flat.summary.aiCredits : undefined, 3);
 
     writeFileSync(logPath, mutationLog(sessionId, 8));
-    utimesSync(logPath, new Date(Date.now() - 10_000), new Date(Date.now() - 10_000));
+    utimesSync(
+      logPath,
+      new Date(Date.now() - 10_000),
+      new Date(Date.now() - 10_000),
+    );
     const log = await reader.read(vscode.Uri.file(directory), sessionId, token);
     assert.equal(log.kind, "ok");
     assert.equal(log.kind === "ok" ? log.summary.aiCredits : undefined, 8);
 
     writeFileSync(logPath, mutationLog(sessionId, 9));
     utimesSync(logPath, new Date(), new Date());
-    const refreshed = await reader.read(vscode.Uri.file(directory), sessionId, token);
+    const refreshed = await reader.read(
+      vscode.Uri.file(directory),
+      sessionId,
+      token,
+    );
     assert.equal(refreshed.kind, "ok");
-    assert.equal(refreshed.kind === "ok" ? refreshed.summary.aiCredits : undefined, 9);
+    assert.equal(
+      refreshed.kind === "ok" ? refreshed.summary.aiCredits : undefined,
+      9,
+    );
 
     writeFileSync(logPath, mutationLog(otherId, 10));
-    utimesSync(logPath, new Date(Date.now() + 10_000), new Date(Date.now() + 10_000));
-    const mismatch = await reader.read(vscode.Uri.file(directory), sessionId, token);
+    utimesSync(
+      logPath,
+      new Date(Date.now() + 10_000),
+      new Date(Date.now() + 10_000),
+    );
+    const mismatch = await reader.read(
+      vscode.Uri.file(directory),
+      sessionId,
+      token,
+    );
     assert.deepEqual(mismatch, {
       kind: "error",
       errorCode: "SessionUsageSessionIdMismatch",
@@ -188,7 +215,11 @@ async function verifySessionUsageReader(): Promise<void> {
     });
     cancellation.dispose();
 
-    const missing = await reader.read(vscode.Uri.file(directory), otherId, token);
+    const missing = await reader.read(
+      vscode.Uri.file(directory),
+      otherId,
+      token,
+    );
     assert.deepEqual(missing, {
       kind: "error",
       errorCode: "SessionUsageFileNotFound",

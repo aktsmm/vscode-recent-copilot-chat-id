@@ -83,17 +83,17 @@ Display title precedence is: **local title > VS Code metadata title > Session `<
 
 ## Commands
 
-| Command                                        | Purpose                                       |
-| ---------------------------------------------- | --------------------------------------------- |
-| `Recent Copilot Chat ID: Refresh`              | Scan saved session filenames again            |
-| `Recent Copilot Chat ID: Copy Recent ID`       | Copy the most recently saved UUID             |
-| `Recent Copilot Chat ID: Show Saved IDs`       | List saved UUIDs and copy the selected one    |
-| `Recent Copilot Chat ID: Show Output`          | Open the diagnostic Output Channel            |
-| `Recent Copilot Chat ID: Open Session Browser` | Reveal the recent session in the Activity Bar |
+| Command                                          | Purpose                                         |
+| ------------------------------------------------ | ----------------------------------------------- |
+| `Recent Copilot Chat ID: Refresh`                | Scan saved session filenames again              |
+| `Recent Copilot Chat ID: Copy Recent ID`         | Copy the most recently saved UUID               |
+| `Recent Copilot Chat ID: Show Saved IDs`         | List saved UUIDs and copy the selected one      |
+| `Recent Copilot Chat ID: Show Output`            | Open the diagnostic Output Channel              |
+| `Recent Copilot Chat ID: Open Session Browser`   | Reveal the recent session in the Activity Bar   |
 | `Recent Copilot Chat ID: Open Session Inspector` | Inspect bounded metadata for a selected session |
-| `Recent Copilot Chat ID: Analyze AI Credits` | Analyze usage for one selected session |
-| `Recent Copilot Chat ID: Show Details`         | Reveal and expand the selected session        |
-| `Recent Copilot Chat ID: Set Local Title`      | Add or rename a local-only session title      |
+| `Recent Copilot Chat ID: Analyze AI Credits`     | Analyze usage for one selected session          |
+| `Recent Copilot Chat ID: Show Details`           | Reveal and expand the selected session          |
+| `Recent Copilot Chat ID: Set Local Title`        | Add or rename a local-only session title        |
 
 Global commands appear in the Command Palette under the **Recent Copilot Chat ID** category. Session-specific copy, Inspector, AI Credits analysis, details, and local-title actions appear on session rows in the Activity Bar. The expanded Session ID detail has a separate UUID-only copy action.
 

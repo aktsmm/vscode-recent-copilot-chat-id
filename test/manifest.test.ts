@@ -55,7 +55,8 @@ test("manifest exposes the Track A commands and opt-in setting", () => {
     manifest.contributes.configuration.properties["agShowSessionId.readTitles"]
       .scope,
     "machine",
-  );  assert.equal(
+  );
+  assert.equal(
     manifest.contributes.configuration.properties["agShowSessionId.readUsage"]
       .default,
     false,
@@ -124,11 +125,17 @@ test("runtime source keeps the bounded metadata privacy boundary", () => {
     path.join(ROOT, "src", "session-usage-reader.ts"),
     "utf8",
   );
-  assert.equal(usageReaderSource.match(/this\.fileSystem\.readFile/g)?.length, 1);
+  assert.equal(
+    usageReaderSource.match(/this\.fileSystem\.readFile/g)?.length,
+    1,
+  );
   assert.doesNotMatch(usageReaderSource, /workspace\.fs\.readFile/);
   assert.match(usageReaderSource, /FileType\.SymbolicLink/);
   assert.match(usageReaderSource, /afterRead\.mtime !== candidate\.modifiedAt/);
-  assert.match(usageReaderSource, /bytes\.byteLength > MAX_SESSION_USAGE_LOG_BYTES/);
+  assert.match(
+    usageReaderSource,
+    /bytes\.byteLength > MAX_SESSION_USAGE_LOG_BYTES/,
+  );
   assert.match(usageReaderSource, /generation !== this\.generation/);
   assert.match(usageReaderSource, /this\.generation\+\+/);
   for (const file of sourceFiles.filter(
@@ -191,7 +198,8 @@ test("runtime source keeps the bounded metadata privacy boundary", () => {
 test("package lock resolves only from the public npm registry", () => {
   const lock = JSON.parse(
     readFileSync(path.join(ROOT, "package-lock.json"), "utf8"),
-  );  assert.equal(manifest.version, "0.2.0");
+  );
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.equal(lock.version, manifest.version);
   assert.equal(lock.packages[""].version, manifest.version);
   const resolved = Object.values(lock.packages)

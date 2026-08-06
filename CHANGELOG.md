@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.2.1 - 2026-08-06
+
+- Keep version-guard tests deterministic before and after a release tag is created.
+
 ## 0.2.0 - 2026-08-06
 
 - Change the default session-row copy format from UUID-only to two lines containing the display title and full session ID; UUID-only copy actions remain available.

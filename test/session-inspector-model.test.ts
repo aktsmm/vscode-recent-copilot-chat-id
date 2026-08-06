@@ -103,15 +103,18 @@ test("buildSessionInspectorModel presents reported AI Credits and model totals",
       },
     },
   );
-  assert.deepEqual(model.fields.slice(-4).map((field) => [field.label, field.value]), [
-    ["AI Credits", "12.75"],
-    ["Requests analyzed", "2"],
-    ["Model token usage", "gpt-5: input 160, cached 32, output 17"],
+  assert.deepEqual(
+    model.fields.slice(-4).map((field) => [field.label, field.value]),
     [
-      "Usage source modified",
-      formatAbsoluteTime(Date.UTC(2026, 7, 6, 10, 6), "en-US"),
+      ["AI Credits", "12.75"],
+      ["Requests analyzed", "2"],
+      ["Model token usage", "gpt-5: input 160, cached 32, output 17"],
+      [
+        "Usage source modified",
+        formatAbsoluteTime(Date.UTC(2026, 7, 6, 10, 6), "en-US"),
+      ],
     ],
-  ]);
+  );
   assert.match(model.note, /selected local session file/);
 });
 
