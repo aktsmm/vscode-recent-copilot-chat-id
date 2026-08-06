@@ -9,7 +9,7 @@ export interface SessionNode {
   readonly record: SessionRecord;
 }
 
-interface DetailNode {
+export interface DetailNode {
   readonly kind: "detail";
   readonly id: string;
   readonly key: "id" | "saved" | "source";
@@ -50,7 +50,8 @@ export class SessionTreeProvider
       item.description = element.value;
       item.tooltip = element.value;
       item.iconPath = new vscode.ThemeIcon(element.icon);
-      item.contextValue = "chatSessionDetail";
+      item.contextValue =
+        element.key === "id" ? "chatSessionDetailId" : "chatSessionDetail";
       item.id = `chat-session-detail:${element.id}:${element.key}`;
       item.accessibilityInformation = {
         label: `${element.label}: ${element.value}`,

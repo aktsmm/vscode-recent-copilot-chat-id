@@ -8,10 +8,32 @@ export const MAX_SESSION_INDEX_BYTES = 4 * 1024 * 1024;
 export const MAX_SESSION_INDEX_ENTRIES = 1_000;
 export const MAX_SESSION_METADATA_TITLE_LENGTH = 500;
 
+export interface SessionIndexTiming {
+  readonly created: number;
+  readonly lastRequestStarted?: number;
+  readonly lastRequestEnded?: number;
+}
+
+export interface SessionIndexStats {
+  readonly fileCount: number;
+  readonly added: number;
+  readonly removed: number;
+}
+
+export type SessionResponseState =
+  | "pending"
+  | "complete"
+  | "cancelled"
+  | "failed"
+  | "needsInput";
+
 export interface SessionIndexMetadata {
   readonly id: string;
   readonly title: string;
   readonly lastMessageDate: number;
+  readonly timing?: SessionIndexTiming;
+  readonly stats?: SessionIndexStats;
+  readonly lastResponseState?: SessionResponseState;
 }
 
 export interface SessionIndexReadResult {
@@ -81,10 +103,16 @@ export function parseSessionIndex(
       throw new SessionIndexError("InvalidSessionIndexIdentity");
     }
 
+    const timing = parseTiming(raw.timing);
+    const stats = parseStats(raw.stats);
+    const lastResponseState = parseResponseState(raw.lastResponseState);
     entries.set(id, {
       id,
       title: raw.title,
       lastMessageDate: raw.lastMessageDate,
+      ...(timing ? { timing } : {}),
+      ...(stats ? { stats } : {}),
+      ...(lastResponseState ? { lastResponseState } : {}),
     });
   }
   return entries;
@@ -127,4 +155,72 @@ export function readSessionIndex(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseTiming(value: unknown): SessionIndexTiming | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value) || !isTimestamp(value.created)) {
+    throw new SessionIndexError("InvalidSessionIndexTiming");
+  }
+  for (const field of [value.lastRequestStarted, value.lastRequestEnded]) {
+    if (field !== undefined && !isTimestamp(field)) {
+      throw new SessionIndexError("InvalidSessionIndexTiming");
+    }
+  }
+  return {
+    created: value.created,
+    ...(typeof value.lastRequestStarted === "number"
+      ? { lastRequestStarted: value.lastRequestStarted }
+      : {}),
+    ...(typeof value.lastRequestEnded === "number"
+      ? { lastRequestEnded: value.lastRequestEnded }
+      : {}),
+  };
+}
+
+function parseStats(value: unknown): SessionIndexStats | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (
+    !isRecord(value) ||
+    !isCount(value.fileCount) ||
+    !isCount(value.added) ||
+    !isCount(value.removed)
+  ) {
+    throw new SessionIndexError("InvalidSessionIndexStats");
+  }
+  return {
+    fileCount: value.fileCount,
+    added: value.added,
+    removed: value.removed,
+  };
+}
+
+function parseResponseState(value: unknown): SessionResponseState | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  // Persisted numeric values mirror VS Code's ResponseModelState enum.
+  const states: readonly SessionResponseState[] = [
+    "pending",
+    "complete",
+    "cancelled",
+    "failed",
+    "needsInput",
+  ];
+  if (!Number.isInteger(value) || typeof value !== "number" || !states[value]) {
+    throw new SessionIndexError("InvalidSessionIndexResponseState");
+  }
+  return states[value];
+}
+
+function isTimestamp(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isCount(value: unknown): value is number {
+  return Number.isSafeInteger(value) && typeof value === "number" && value >= 0;
 }

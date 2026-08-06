@@ -26,6 +26,9 @@ test("manifest exposes the Track A commands and opt-in setting", () => {
     "agShowSessionId.showOutput",
     "agShowSessionId.openView",
     "agShowSessionId.copySession",
+    "agShowSessionId.copySessionId",
+    "agShowSessionId.openInspector",
+    "agShowSessionId.analyzeUsage",
     "agShowSessionId.showDetails",
     "agShowSessionId.setAlias",
     "agShowSessionId.clearAlias",
@@ -52,6 +55,15 @@ test("manifest exposes the Track A commands and opt-in setting", () => {
     manifest.contributes.configuration.properties["agShowSessionId.readTitles"]
       .scope,
     "machine",
+  );  assert.equal(
+    manifest.contributes.configuration.properties["agShowSessionId.readUsage"]
+      .default,
+    false,
+  );
+  assert.equal(
+    manifest.contributes.configuration.properties["agShowSessionId.readUsage"]
+      .scope,
+    "machine",
   );
   assert.equal(
     manifest.contributes.viewsContainers.activitybar[0].id,
@@ -66,7 +78,20 @@ test("manifest exposes the Track A commands and opt-in setting", () => {
     "agShowSessionId.sessionsView",
   );
   assert.equal(manifest.contributes.menus["view/title"].length, 4);
-  assert.equal(manifest.contributes.menus["view/item/context"].length, 4);
+  assert.equal(manifest.contributes.menus["view/item/context"].length, 7);
+  assert.deepEqual(
+    manifest.contributes.menus.commandPalette
+      .filter((entry: { when?: string }) => entry.when === "false")
+      .map((entry: { command: string }) => entry.command)
+      .sort(),
+    [
+      "agShowSessionId.clearAlias",
+      "agShowSessionId.copySession",
+      "agShowSessionId.copySessionId",
+      "agShowSessionId.enable",
+      "agShowSessionId.showDetails",
+    ],
+  );
   const activityIcon = readFileSync(
     path.join(ROOT, "images", "sessions-activity.svg"),
     "utf8",
@@ -95,7 +120,37 @@ test("runtime source keeps the bounded metadata privacy boundary", () => {
     .join("\n");
   assert.match(source, /workspace\.fs\.readDirectory/);
   assert.match(source, /workspace\.fs\.stat/);
-  assert.doesNotMatch(source, /workspace\.fs\.readFile/);
+  const usageReaderSource = readFileSync(
+    path.join(ROOT, "src", "session-usage-reader.ts"),
+    "utf8",
+  );
+  assert.equal(usageReaderSource.match(/this\.fileSystem\.readFile/g)?.length, 1);
+  assert.doesNotMatch(usageReaderSource, /workspace\.fs\.readFile/);
+  assert.match(usageReaderSource, /FileType\.SymbolicLink/);
+  assert.match(usageReaderSource, /afterRead\.mtime !== candidate\.modifiedAt/);
+  assert.match(usageReaderSource, /bytes\.byteLength > MAX_SESSION_USAGE_LOG_BYTES/);
+  assert.match(usageReaderSource, /generation !== this\.generation/);
+  assert.match(usageReaderSource, /this\.generation\+\+/);
+  for (const file of sourceFiles.filter(
+    (name) => name !== "session-usage-reader.ts",
+  )) {
+    const content = readFileSync(path.join(ROOT, "src", file), "utf8");
+    assert.doesNotMatch(content, /workspace\.fs\.readFile/);
+  }
+  const usageLogSource = readFileSync(
+    path.join(ROOT, "src", "session-usage-log.ts"),
+    "utf8",
+  );
+  assert.match(usageLogSource, /sessionCopilotCredits/);
+  for (const file of sourceFiles.filter(
+    (name) => name !== "session-usage-log.ts",
+  )) {
+    const content = readFileSync(path.join(ROOT, "src", file), "utf8");
+    assert.doesNotMatch(
+      content,
+      /sessionCopilotCredits|modelTotals|copilotCredits/,
+    );
+  }
   assert.doesNotMatch(source, /debug-logs|process\.env\.APPDATA|%APPDATA%/i);
   assert.doesNotMatch(
     source,
@@ -136,7 +191,9 @@ test("runtime source keeps the bounded metadata privacy boundary", () => {
 test("package lock resolves only from the public npm registry", () => {
   const lock = JSON.parse(
     readFileSync(path.join(ROOT, "package-lock.json"), "utf8"),
-  );
+  );  assert.equal(manifest.version, "0.2.0");
+  assert.equal(lock.version, manifest.version);
+  assert.equal(lock.packages[""].version, manifest.version);
   const resolved = Object.values(lock.packages)
     .map((entry) => (entry as { resolved?: string } | undefined)?.resolved)
     .filter((value): value is string => Boolean(value));
@@ -163,8 +220,24 @@ test("status bar updates flow through the accessible renderer", () => {
   assert.doesNotMatch(source, /context\.subscriptions\.push\(output/);
   assert.match(source, /this\.output\.dispose\(\)/);
   assert.equal(source.match(/clipboard\.writeText\(/g)?.length, 1);
-  assert.equal(source.match(/copySessionId\(/g)?.length, 4);
-  assert.match(source, /copySessionIdWithRecovery\(id/);
+  assert.ok((source.match(/copySessionId\(/g)?.length ?? 0) >= 4);
+  assert.match(source, /copySessionIdWithRecovery\(\s*id,/);
+  assert.match(source, /copySessionWithTitleWithRecovery/);
+  assert.match(
+    source,
+    /private async copyTreeSession[\s\S]*?this\.copySessionWithTitle\(record\)/,
+  );
+  assert.match(
+    source,
+    /private async copyRecent[\s\S]*?this\.copySessionId\(recent\.id\)/,
+  );
+  assert.match(source, /this\.inspector\.show\(record\)/);
+  assert.match(source, /this\.inspector\.dispose\(\)/);
+  assert.match(
+    source,
+    /this\.usageReader\.clear\(\);\s*this\.inspector\.dispose\(\)/,
+  );
+  assert.match(source, /if \(!this\.isUsageReadingEnabled\(\)\)/);
 });
 
 test("commands use a single palette category", () => {
@@ -275,7 +348,11 @@ test("the manifest icon exists as a 128x128 PNG", () => {
 test("packaging derives the VSIX filename from package metadata", () => {
   assert.equal(
     manifest.scripts.package,
-    "npm run compile && node scripts/package-extension.mjs && npm run verify:vsix",
+    "npm run verify:version && npm run compile && node scripts/package-extension.mjs && npm run verify:vsix",
+  );
+  assert.equal(
+    manifest.scripts["verify:version"],
+    "node scripts/verify-version.mjs",
   );
   assert.equal(manifest.scripts["verify:vsix"], "node scripts/verify-vsix.mjs");
   assert.equal(
@@ -287,6 +364,13 @@ test("packaging derives the VSIX filename from package metadata", () => {
     "npm audit --audit-level=high && npm test && npm run package && npm run verify:install",
   );
 
+  const versionGuard = readFileSync(
+    path.join(ROOT, "scripts", "verify-version.mjs"),
+    "utf8",
+  );
+  assert.match(versionGuard, /refs\/tags\/\$\{tag\}/);
+  assert.match(versionGuard, /CHANGELOG\.md must contain an entry/);
+  assert.match(versionGuard, /Package version must be stable semver/);
   const packager = readFileSync(
     path.join(ROOT, "scripts", "package-extension.mjs"),
     "utf8",
@@ -361,15 +445,17 @@ test("the English and Japanese readmes link to each other", () => {
 test("every unit test file is registered in the test:unit script", () => {
   const unitScript: string = manifest.scripts["test:unit"];
   const testFiles = readdirSync(path.join(ROOT, "test")).filter((name) =>
-    name.endsWith(".test.ts"),
+    /\.test\.(?:ts|mjs)$/.test(name),
   );
 
   assert.ok(testFiles.length > 0);
   for (const file of testFiles) {
-    const compiled = `out/test/${file.replace(/\.ts$/, ".js")}`;
+    const executable = file.endsWith(".ts")
+      ? `out/test/${file.replace(/\.ts$/, ".js")}`
+      : `test/${file}`;
     assert.ok(
-      unitScript.includes(compiled),
-      `Test file is never executed: ${compiled}`,
+      unitScript.includes(executable),
+      `Test file is never executed: ${executable}`,
     );
   }
 });

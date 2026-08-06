@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.2.0 - 2026-08-06
+
+- Change the default session-row copy format from UUID-only to two lines containing the display title and full session ID; UUID-only copy actions remain available.
+- Add a script-free Session Inspector for bounded timing, response-state, and changed-line metadata from VS Code's local chat index.
+- Keep chat JSON/JSONL content unread by default and validate every retained optional metadata field.
+- Add machine-local, default-off AI Credits analysis for one explicitly selected session.
+- Retain only backend-reported AI Credits, request count, and model token totals in memory; never estimate credits or retain transcript content.
+
 ## 0.1.0 - 2026-08-05
 
 - Add a dedicated Recent Chat Sessions Activity Bar browser.

@@ -1,7 +1,7 @@
 # Recent Copilot Chat ID
 
 <p align="center">
-	<strong>See and copy the most recently saved Copilot Chat session UUID without reading chat content.</strong>
+	<strong>Browse recently saved Copilot Chat sessions, copy their IDs, and optionally analyze backend-reported AI Credits on demand.</strong>
 </p>
 
 <p align="center">
@@ -35,7 +35,11 @@ This extension shows a **recently saved** session ID. It does not claim to ident
 - Dedicated **Recent Chat Sessions** Activity Bar view
 - Session rows show a local title or VS Code title, short ID, and relative save time
 - Expand a row to inspect the full ID, saved time, and title source
-- Inline and right-click actions to copy IDs or set/clear a local title
+- Inline and right-click actions to copy the title and ID together, inspect metadata, or set/clear a local title
+- Copy a session row as two lines: its display title, then `Session ID: <UUID>`
+- Open a script-free Session Inspector for bounded timing, response-state, and changed-line metadata when VS Code provides it
+- Explicitly analyze backend-reported AI Credits, request count, and model token totals for one selected session
+- Copy the UUID alone from the expanded Session ID detail row or the global **Copy Recent ID** command
 - Status bar: `Recent: <title or short UUID>`; selecting it reveals the session in the browser
 - Tooltip shows how many session IDs are saved in the window
 - Copy the full recent UUID
@@ -61,6 +65,9 @@ For a local build:
 4. In VS Code, run **Extensions: Install from VSIX...** from the Command Palette.
 5. Select the generated `artifacts/vsix/ag-show-session-id-<version>.vsix` and reload VS Code when prompted.
 
+> [!NOTE]
+> Local development builds and the Marketplace release use the same extension ID. Installing a local 0.2.0 VSIX in your normal profile replaces the installed 0.1.0 release. Use `npm run verify:install` for isolated verification, or reinstall the Marketplace version after manual testing.
+
 ## Enable
 
 Filename scanning is disabled by default. The extension offers to turn it on once per profile on first activation. You can also run any command and choose **Enable** in the prompt, or set `agShowSessionId.enabled` in User Settings.
@@ -68,7 +75,9 @@ Filename scanning is disabled by default. The extension offers to turn it on onc
 The extension then reads only `.json` and `.jsonl` **filenames** from the current window's local `chatSessions` storage directory. It reads file modification times for ordering.
 The opt-in setting is machine-scoped and is not synchronized to other devices.
 
-Session titles are a separate opt-in. Enable `agShowSessionId.readTitles` from the view toolbar or Settings to read only the `chat.ChatSessionStore.index` entry from VS Code's local read-only state database. Titles can be derived from chat content, remain in memory only, and are never written to logs. Chat messages and JSONL contents are never read.
+Session titles are a separate opt-in. Enable `agShowSessionId.readTitles` from the view toolbar or Settings to read only the `chat.ChatSessionStore.index` entry from VS Code's local read-only state database. Titles can be derived from chat content, remain in memory only, and are never written to logs. Chat messages and JSONL contents are not read by this setting.
+
+AI Credits analysis is another machine-local opt-in. Run **Analyze AI Credits** on a session row to read only that selected session's `.jsonl` or legacy `.json` file. Session files contain chat content; the extension reconstructs the usage fields but retains only session ID, request count, backend-reported AI Credits, and model token totals in an in-memory cache. It does not display, log, persist, cache, or send prompts and responses. Disabling `agShowSessionId.readUsage` clears the cache and immediately closes the open Session Inspector.
 
 Display title precedence is: **local title > VS Code metadata title > Session `<short ID>`**. Local titles persist by session ID in the local VS Code profile, follow the session between empty and workspace windows, are not synchronized, and never modify Copilot Chat storage. Early 0.1 development aliases are migrated automatically.
 
@@ -81,10 +90,12 @@ Display title precedence is: **local title > VS Code metadata title > Session `<
 | `Recent Copilot Chat ID: Show Saved IDs`       | List saved UUIDs and copy the selected one    |
 | `Recent Copilot Chat ID: Show Output`          | Open the diagnostic Output Channel            |
 | `Recent Copilot Chat ID: Open Session Browser` | Reveal the recent session in the Activity Bar |
+| `Recent Copilot Chat ID: Open Session Inspector` | Inspect bounded metadata for a selected session |
+| `Recent Copilot Chat ID: Analyze AI Credits` | Analyze usage for one selected session |
 | `Recent Copilot Chat ID: Show Details`         | Reveal and expand the selected session        |
 | `Recent Copilot Chat ID: Set Local Title`      | Add or rename a local-only session title      |
 
-Global commands appear in the Command Palette under the **Recent Copilot Chat ID** category. Session-specific copy, details, and local-title actions appear on session rows in the Activity Bar.
+Global commands appear in the Command Palette under the **Recent Copilot Chat ID** category. Session-specific copy, Inspector, AI Credits analysis, details, and local-title actions appear on session rows in the Activity Bar. The expanded Session ID detail has a separate UUID-only copy action.
 
 ## Status bar states
 
@@ -98,12 +109,14 @@ Global commands appear in the Command Palette under the **Recent Copilot Chat ID
 ## Privacy
 
 - No telemetry or network access
-- No chat JSON/JSONL content reads
+- No chat JSON/JSONL content reads by default; optional AI Credits analysis reads only the explicitly selected session file
 - No debug log reads
 - No session file writes
-- No prompt, response, reference, or code collection
+- Prompts, responses, references, paths, and tool payloads are never displayed, logged, persisted, cached, or sent by usage analysis
 - Diagnostic logs include only shortened ID prefixes, never full session IDs
-- Optional title metadata reads one bounded index entry and retains only session ID, title, and last saved time in memory
+- Optional metadata reads one bounded index entry and retains only approved session ID, title, timing, response-state, and changed-line summary fields in memory
+- Optional usage analysis retains only a bounded usage summary in memory; disabling it clears the summary and closes the Inspector
+- The Session Inspector remains script-free and renders escaped text only
 
 ## Compatibility
 

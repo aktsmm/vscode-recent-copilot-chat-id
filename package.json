@@ -1,8 +1,8 @@
 {
   "name": "ag-show-session-id",
   "displayName": "Recent Copilot Chat ID",
-  "description": "Shows the most recently saved local Copilot Chat session ID without reading chat content.",
-  "version": "0.1.0",
+  "description": "Browses recently saved local Copilot Chat sessions and optionally analyzes backend-reported AI Credits on demand.",
+  "version": "0.2.0",
   "preview": true,
   "publisher": "yamapan",
   "license": "CC-BY-NC-SA-4.0",
@@ -77,6 +77,24 @@
         "category": "%command.category%",
         "title": "%command.copySession.title%",
         "icon": "$(copy)"
+      },
+      {
+        "command": "agShowSessionId.copySessionId",
+        "category": "%command.category%",
+        "title": "%command.copySessionId.title%",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "agShowSessionId.openInspector",
+        "category": "%command.category%",
+        "title": "%command.openInspector.title%",
+        "icon": "$(inspect)"
+      },
+      {
+        "command": "agShowSessionId.analyzeUsage",
+        "category": "%command.category%",
+        "title": "%command.analyzeUsage.title%",
+        "icon": "$(graph)"
       },
       {
         "command": "agShowSessionId.showDetails",
@@ -179,6 +197,21 @@
           "group": "inline@1"
         },
         {
+          "command": "agShowSessionId.openInspector",
+          "when": "view == agShowSessionId.sessionsView && (viewItem == chatSession || viewItem == chatSessionWithAlias)",
+          "group": "inline@2"
+        },
+        {
+          "command": "agShowSessionId.analyzeUsage",
+          "when": "view == agShowSessionId.sessionsView && (viewItem == chatSession || viewItem == chatSessionWithAlias)",
+          "group": "2_analysis@1"
+        },
+        {
+          "command": "agShowSessionId.copySessionId",
+          "when": "view == agShowSessionId.sessionsView && viewItem == chatSessionDetailId",
+          "group": "inline@1"
+        },
+        {
           "command": "agShowSessionId.setAlias",
           "when": "view == agShowSessionId.sessionsView && (viewItem == chatSession || viewItem == chatSessionWithAlias)",
           "group": "1_edit@1"
@@ -197,6 +230,10 @@
       "commandPalette": [
         {
           "command": "agShowSessionId.copySession",
+          "when": "false"
+        },
+        {
+          "command": "agShowSessionId.copySessionId",
           "when": "false"
         },
         {
@@ -227,6 +264,12 @@
           "default": false,
           "scope": "machine",
           "description": "%configuration.readTitles.description%"
+        },
+        "agShowSessionId.readUsage": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "description": "%configuration.readUsage.description%"
         }
       }
     }
@@ -239,11 +282,12 @@
     "watch": "tsc --watch -p ./",
     "test": "npm run test:unit && npm run test:extension",
     "pretest:unit": "npm run compile",
-    "test:unit": "node --test out/test/session-scanner.test.js out/test/session-index.test.js out/test/session-model.test.js out/test/session-alias-store.test.js out/test/session-tree-model.test.js out/test/visible-refresh.test.js out/test/status-presentation.test.js out/test/copy-session.test.js out/test/localization.test.js out/test/manifest.test.js",
+    "test:unit": "node --test test/version-guard.test.mjs out/test/session-scanner.test.js out/test/session-index.test.js out/test/session-model.test.js out/test/session-alias-store.test.js out/test/session-tree-model.test.js out/test/session-inspector-model.test.js out/test/session-inspector.test.js out/test/session-usage-log.test.js out/test/visible-refresh.test.js out/test/status-presentation.test.js out/test/copy-session.test.js out/test/localization.test.js out/test/manifest.test.js",
     "pretest:extension": "npm run compile",
     "test:extension": "node out/test/run-test.js",
     "prepackage": "npm run icon",
-    "package": "npm run compile && node scripts/package-extension.mjs && npm run verify:vsix",
+    "package": "npm run verify:version && npm run compile && node scripts/package-extension.mjs && npm run verify:vsix",
+    "verify:version": "node scripts/verify-version.mjs",
     "verify:vsix": "node scripts/verify-vsix.mjs",
     "verify:install": "node scripts/verify-install.mjs",
     "verify:release": "npm audit --audit-level=high && npm test && npm run package && npm run verify:install"

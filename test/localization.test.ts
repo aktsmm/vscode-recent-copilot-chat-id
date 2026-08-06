@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import {
@@ -47,7 +47,10 @@ test("manifest declares the runtime l10n bundle folder", () => {
 });
 
 test("every runtime l10n string has a Japanese translation", () => {
-  const source = ["extension.ts", "session-tree.ts"].map(readSource).join("\n");
+  const source = readdirSync(path.join(ROOT, "src"))
+    .filter((name) => name.endsWith(".ts"))
+    .map(readSource)
+    .join("\n");
   const runtimeStrings = [
     ...source.matchAll(/vscode\.l10n\.t\(\s*"((?:[^"\\]|\\.)*)"/g),
   ].map((match) => JSON.parse(`"${match[1]}"`) as string);
@@ -108,6 +111,10 @@ test("every status bar string has a Japanese translation", () => {
     collect,
     400,
   );
+  const inspectorSource = readSource("session-inspector-model.ts");
+  for (const match of inspectorSource.matchAll(/t\(\s*"((?:[^"\\]|\\.)*)"/g)) {
+    collected.push(JSON.parse(`"${match[1]}"`) as string);
+  }
 
   assert.ok(collected.length > 0);
   for (const message of collected) {

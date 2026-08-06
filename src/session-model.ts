@@ -9,6 +9,7 @@ export type SessionTitleSource = "alias" | "metadata" | "id";
 export interface SessionRecord extends SavedSession {
   readonly displayTitle: string;
   readonly metadataTitle?: string;
+  readonly metadata?: SessionIndexMetadata;
   readonly alias?: string;
   readonly titleSource: SessionTitleSource;
 }
@@ -30,8 +31,9 @@ export function buildSessionRecords(
   aliases: Readonly<Record<string, string>>,
 ): SessionRecord[] {
   return sessions.map((session) => {
+    const metadata = index.get(session.id);
     const alias = normalizeStoredAlias(aliases[session.id]);
-    const metadataTitle = normalizeMetadataTitle(index.get(session.id)?.title);
+    const metadataTitle = normalizeMetadataTitle(metadata?.title);
     const displayTitle =
       alias ??
       (metadataTitle
@@ -48,6 +50,7 @@ export function buildSessionRecords(
       ...session,
       displayTitle,
       metadataTitle,
+      metadata,
       alias,
       titleSource,
     };

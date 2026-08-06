@@ -69,6 +69,91 @@ test("parseSessionIndex keeps only approved metadata fields", () => {
   ]);
 });
 
+test("parseSessionIndex retains validated timing, stats, and response state", () => {
+  const entries = parseSessionIndex(
+    JSON.stringify({
+      version: 1,
+      entries: {
+        [SESSION_ID]: {
+          sessionId: SESSION_ID,
+          title: "Authentication failure",
+          lastMessageDate: 1234,
+          timing: {
+            created: 1000,
+            lastRequestStarted: 1100,
+            lastRequestEnded: 1200,
+          },
+          stats: { fileCount: 2, added: 30, removed: 4 },
+          lastResponseState: 1,
+        },
+      },
+    }),
+  );
+
+  assert.deepEqual(entries.get(SESSION_ID), {
+    id: SESSION_ID,
+    title: "Authentication failure",
+    lastMessageDate: 1234,
+    timing: {
+      created: 1000,
+      lastRequestStarted: 1100,
+      lastRequestEnded: 1200,
+    },
+    stats: { fileCount: 2, added: 30, removed: 4 },
+    lastResponseState: "complete",
+  });
+});
+
+test("parseSessionIndex rejects malformed optional metadata", () => {
+  for (const extra of [
+    { timing: { created: -1 } },
+    { stats: { fileCount: 1, added: -1, removed: 0 } },
+    { lastResponseState: 9 },
+  ]) {
+    assert.throws(() =>
+      parseSessionIndex(
+        JSON.stringify({
+          version: 1,
+          entries: {
+            [SESSION_ID]: {
+              sessionId: SESSION_ID,
+              title: "Invalid optional metadata",
+              lastMessageDate: 1,
+              ...extra,
+            },
+          },
+        }),
+      ),
+    );
+  }
+});
+
+test("parseSessionIndex accepts partial timing and zero stats", () => {
+  const entries = parseSessionIndex(
+    JSON.stringify({
+      version: 1,
+      entries: {
+        [SESSION_ID]: {
+          sessionId: SESSION_ID,
+          title: "Partial metadata",
+          lastMessageDate: 1,
+          timing: { created: 0, lastRequestEnded: 1 },
+          stats: { fileCount: 0, added: 0, removed: 0 },
+        },
+      },
+    }),
+  );
+  assert.deepEqual(entries.get(SESSION_ID)?.timing, {
+    created: 0,
+    lastRequestEnded: 1,
+  });
+  assert.deepEqual(entries.get(SESSION_ID)?.stats, {
+    fileCount: 0,
+    added: 0,
+    removed: 0,
+  });
+});
+
 test("parseSessionIndex rejects unsupported versions and malformed entries", () => {
   assert.throws(
     () => parseSessionIndex('{"version":2,"entries":{}}'),
