@@ -299,7 +299,7 @@ test("readSessionIndex degrades for missing keys, malformed values, and missing 
   withDatabase("not-json", (file) => {
     const result = readSessionIndex(file);
     assert.equal(result.entries.size, 0);
-    assert.equal(result.errorCode, "SyntaxError");
+    assert.equal(result.errorCode, "SessionIndexReadFailed");
   });
 
   const result = readSessionIndex(

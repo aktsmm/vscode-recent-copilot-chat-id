@@ -40,7 +40,7 @@ test("flat JSON snapshot uses the same exact usage contract", () => {
         {
           requestId: "one",
           message: "must-not-leak",
-          copilotCredits: 999,
+          copilotCredits: 2,
           sessionCopilotCredits: 4.5,
           modelTotals: [
             {
@@ -102,12 +102,21 @@ test("synthetic mutation log reconstructs exact backend-reported usage", () => {
     "requestCount",
     "sessionId",
   ]);
-  assert.doesNotMatch(JSON.stringify(summary), /secret|workingDirectory|prompt|response|999/);
+  assert.doesNotMatch(
+    JSON.stringify(summary),
+    /secret|workingDirectory|prompt|response|999/,
+  );
 });
 
-test("missing credits stays unreported and zero remains a reported value", () => {
-  const unreported = analyzeSessionUsageLog(
+test("request credits are summed and zero remains a reported value", () => {
+  const requestCredits = analyzeSessionUsageLog(
     `${initial({ requests: [{ requestId: "one", copilotCredits: 50 }] })}\n`,
+    SESSION_ID,
+  );
+  assert.equal(requestCredits.aiCredits, 50);
+
+  const unreported = analyzeSessionUsageLog(
+    `${initial({ requests: [{ requestId: "one" }] })}\n`,
     SESSION_ID,
   );
   assert.equal(unreported.aiCredits, undefined);
@@ -161,6 +170,54 @@ test("session credits use the maximum backend-reported total", () => {
     SESSION_ID,
   );
   assert.equal(summary.aiCredits, 20);
+});
+
+test("credits match VS Code session cost semantics", () => {
+  const summary = analyzeSessionUsageLog(
+    `${initial({
+      requests: [
+        { requestId: "one", copilotCredits: 8, sessionCopilotCredits: 10 },
+        { requestId: "two", copilotCredits: 7 },
+      ],
+    })}\n`,
+    SESSION_ID,
+  );
+  assert.equal(summary.aiCredits, 15);
+});
+
+test("prompt and completion tokens cover sessions without model totals", () => {
+  const summary = analyzeSessionUsageLog(
+    log(
+      JSON.parse(
+        initial({
+          requests: [
+            { requestId: "one", promptTokens: 100, completionTokens: 20 },
+            {
+              requestId: "two",
+              promptTokens: 999,
+              completionTokens: 999,
+              modelTotals: [
+                {
+                  model: "gpt-5",
+                  inputTokens: 50,
+                  cachedTokens: 10,
+                  outputTokens: 5,
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+      { kind: 1, k: ["requests", 0, "promptTokens"], v: 120 },
+      { kind: 1, k: ["requests", 0, "completionTokens"], v: 25 },
+    ),
+    SESSION_ID,
+  );
+  assert.deepEqual(summary.unattributedTokens, {
+    inputTokens: 120,
+    outputTokens: 25,
+  });
+  assert.equal(summary.models[0]?.inputTokens, 50);
 });
 
 test("nested usage mutations require an existing request and exact path", () => {
@@ -230,7 +287,10 @@ test("duplicate per-request model totals fail closed", () => {
 test("malformed, unsupported, and identity-mismatched logs fail closed", () => {
   const cases: Array<[string, string]> = [
     ["not-json\n", "SessionUsageMalformedJson"],
-    [log({ kind: 1, k: ["requests"], v: [] }), "SessionUsageMissingInitialEntry"],
+    [
+      log({ kind: 1, k: ["requests"], v: [] }),
+      "SessionUsageMissingInitialEntry",
+    ],
     [`${initial({ version: 4 })}\n`, "SessionUsageUnsupportedSchema"],
     [log(JSON.parse(initial()), { kind: 4 }), "SessionUsageUnknownEntryKind"],
     [
@@ -275,7 +335,10 @@ test("invalid reported usage fails closed", () => {
     },
   ]) {
     assert.throws(() =>
-      analyzeSessionUsageLog(`${initial({ requests: [request] })}\n`, SESSION_ID),
+      analyzeSessionUsageLog(
+        `${initial({ requests: [request] })}\n`,
+        SESSION_ID,
+      ),
     );
   }
 });
@@ -306,4 +369,10 @@ test("file, entry, and request limits fail closed", () => {
       ),
     /SessionUsageTooManyRequests/,
   );
+});
+
+test("line replay does not materialize the complete line array", () => {
+  const content = `${initial()}${"\n".repeat(100_000)}`;
+  const summary = analyzeSessionUsageLog(content, SESSION_ID);
+  assert.equal(summary.requestCount, 0);
 });

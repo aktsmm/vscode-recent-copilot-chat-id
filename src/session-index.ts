@@ -38,11 +38,27 @@ export interface SessionIndexMetadata {
 
 export interface SessionIndexReadResult {
   readonly entries: ReadonlyMap<string, SessionIndexMetadata>;
-  readonly errorCode?: string;
+  readonly errorCode?: SessionIndexErrorCode;
 }
 
+const SESSION_INDEX_ERROR_CODES = [
+  "IndexNotFound",
+  "InvalidSessionIndexEntry",
+  "InvalidSessionIndexIdentity",
+  "InvalidSessionIndexResponseState",
+  "InvalidSessionIndexStats",
+  "InvalidSessionIndexTiming",
+  "SessionIndexReadFailed",
+  "SessionIndexTooLarge",
+  "SessionMetadataTitleTooLong",
+  "TooManySessionIndexEntries",
+  "UnsupportedSessionIndex",
+] as const;
+
+type SessionIndexErrorCode = (typeof SESSION_INDEX_ERROR_CODES)[number];
+
 class SessionIndexError extends Error {
-  constructor(code: string) {
+  constructor(code: SessionIndexErrorCode) {
     super(code);
     this.name = code;
   }
@@ -144,9 +160,14 @@ export function readSessionIndex(
     }
     return { entries: parseSessionIndex(row.value, allowedIds) };
   } catch (error) {
+    const name = error instanceof Error ? error.name : "";
     return {
       entries: new Map(),
-      errorCode: error instanceof Error ? error.name : "UnknownError",
+      errorCode: SESSION_INDEX_ERROR_CODES.includes(
+        name as SessionIndexErrorCode,
+      )
+        ? (name as SessionIndexErrorCode)
+        : "SessionIndexReadFailed",
     };
   } finally {
     database?.close();

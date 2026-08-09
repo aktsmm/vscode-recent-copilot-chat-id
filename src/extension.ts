@@ -9,6 +9,10 @@ import { SessionAliasStore } from "./session-alias-store";
 import { SessionInspector } from "./session-inspector";
 import { SessionUsageReader } from "./session-usage-reader";
 import {
+  describeSessionUsageError,
+  SessionInspectorUsage,
+} from "./session-inspector-model";
+import {
   readSessionIndex,
   resolveSessionIndexPath,
   SESSION_INDEX_DATABASE_GLOB,
@@ -100,12 +104,14 @@ class RecentChatController implements vscode.Disposable {
   private readonly treeProvider = new SessionTreeProvider();
   private readonly inspector = new SessionInspector();
   private readonly usageReader = new SessionUsageReader();
+  private readonly displayedUsage = new Map<string, SessionInspectorUsage>();
   private readonly treeView: vscode.TreeView<SessionTreeNode>;
   private readonly relativeTimeScheduler = new VisibleRefreshScheduler(() =>
     this.treeProvider.refresh(),
   );
   private scanAvailable = true;
   private scanGeneration = 0;
+  private usageAnalysisGeneration = 0;
   private disposed = false;
   private lastStatusKey: string | undefined;
   private watcher: vscode.FileSystemWatcher | undefined;
@@ -204,7 +210,9 @@ class RecentChatController implements vscode.Disposable {
           ) &&
           !this.isUsageReadingEnabled()
         ) {
+          this.usageAnalysisGeneration++;
           this.usageReader.clear();
+          this.displayedUsage.clear();
           this.inspector.dispose();
         }
       }),
@@ -626,7 +634,11 @@ class RecentChatController implements vscode.Disposable {
     if (!(await this.ensureEnabled())) {
       return;
     }
+    const inspectorGeneration = ++this.usageAnalysisGeneration;
     await this.refresh(false);
+    if (inspectorGeneration !== this.usageAnalysisGeneration) {
+      return;
+    }
     const requestedId = node?.kind === "session" ? node.record.id : undefined;
     const record = requestedId
       ? selectSessionRecord(this.records, requestedId)
@@ -638,7 +650,34 @@ class RecentChatController implements vscode.Disposable {
       return;
     }
     if (record) {
-      this.inspector.show(record);
+      let usage = this.displayedUsage.get(record.id);
+      const sessionDirectory = this.resolveSessionDirectory();
+      if (usage && this.isUsageReadingEnabled() && sessionDirectory) {
+        const tokenSource = new vscode.CancellationTokenSource();
+        const refreshed = await this.usageReader
+          .read(sessionDirectory, record.id, tokenSource.token)
+          .finally(() => tokenSource.dispose());
+        if (!this.isUsageReadingEnabled()) {
+          this.usageReader.clear();
+          this.displayedUsage.clear();
+          return;
+        }
+        if (inspectorGeneration !== this.usageAnalysisGeneration) {
+          return;
+        }
+        usage =
+          refreshed.kind === "ok"
+            ? {
+                kind: "ok",
+                summary: refreshed.summary,
+                sourceModifiedAt: refreshed.sourceModifiedAt,
+              }
+            : { kind: "error", errorCode: refreshed.errorCode };
+        this.displayedUsage.set(record.id, usage);
+      }
+      if (inspectorGeneration === this.usageAnalysisGeneration) {
+        this.inspector.show(record, usage);
+      }
     }
   }
 
@@ -646,7 +685,14 @@ class RecentChatController implements vscode.Disposable {
     if (!(await this.ensureEnabled()) || !(await this.promptToEnableUsage())) {
       return;
     }
+    const analysisGeneration = ++this.usageAnalysisGeneration;
     await this.refresh(false);
+    if (
+      !this.isUsageReadingEnabled() ||
+      analysisGeneration !== this.usageAnalysisGeneration
+    ) {
+      return;
+    }
     const requestedId = node?.kind === "session" ? node.record.id : undefined;
     const record = requestedId
       ? selectSessionRecord(this.records, requestedId)
@@ -671,9 +717,22 @@ class RecentChatController implements vscode.Disposable {
         ),
         cancellable: true,
       },
-      (_progress, token) =>
-        this.usageReader.read(sessionDirectory, record.id, token),
+      (_progress, token) => {
+        if (
+          !this.isUsageReadingEnabled() ||
+          analysisGeneration !== this.usageAnalysisGeneration
+        ) {
+          return Promise.resolve({
+            kind: "error" as const,
+            errorCode: "SessionUsageCancelled" as const,
+          });
+        }
+        return this.usageReader.read(sessionDirectory, record.id, token);
+      },
     );
+    if (analysisGeneration !== this.usageAnalysisGeneration) {
+      return;
+    }
     if (!this.isUsageReadingEnabled()) {
       this.usageReader.clear();
       return;
@@ -685,17 +744,29 @@ class RecentChatController implements vscode.Disposable {
       this.output.warn(
         `Session usage unavailable for ${shortenSessionId(record.id)}: ${result.errorCode}.`,
       );
-      this.inspector.show(record, { kind: "error" });
-      void vscode.window.showWarningMessage(
-        vscode.l10n.t("AI Credits are unavailable for this session."),
+      const usage: SessionInspectorUsage = {
+        kind: "error",
+        errorCode: result.errorCode,
+      };
+      this.displayedUsage.set(record.id, usage);
+      this.inspector.show(record, usage);
+      const showOutput = vscode.l10n.t("Show Output");
+      const action = await vscode.window.showWarningMessage(
+        describeSessionUsageError(result.errorCode, vscode.l10n.t),
+        showOutput,
       );
+      if (action === showOutput) {
+        this.output.show(true);
+      }
       return;
     }
-    this.inspector.show(record, {
+    const usage: SessionInspectorUsage = {
       kind: "ok",
       summary: result.summary,
       sourceModifiedAt: result.sourceModifiedAt,
-    });
+    };
+    this.displayedUsage.set(record.id, usage);
+    this.inspector.show(record, usage);
   }
   private async setAlias(node?: SessionTreeNode): Promise<void> {
     if (!(await this.ensureEnabled())) {
@@ -1071,7 +1142,27 @@ class RecentChatController implements vscode.Disposable {
 
 function toSafeErrorCode(error: unknown): string {
   if (error instanceof vscode.FileSystemError) {
-    return error.code;
+    return [
+      "FileExists",
+      "FileNotFound",
+      "FileNotADirectory",
+      "FileIsADirectory",
+      "NoPermissions",
+      "Unavailable",
+      "Unknown",
+    ].includes(error.code)
+      ? error.code
+      : "FileSystemError";
   }
-  return error instanceof Error ? error.name : "UnknownError";
+  const name = error instanceof Error ? error.name : "UnknownError";
+  return [
+    "AbortError",
+    "Error",
+    "RangeError",
+    "SyntaxError",
+    "TypeError",
+    "UnknownError",
+  ].includes(name)
+    ? name
+    : "UnexpectedError";
 }

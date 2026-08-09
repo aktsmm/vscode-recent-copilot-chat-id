@@ -146,7 +146,9 @@ const expected = [
   "extension/out/src/session-tree-model.js",
   "extension/out/src/session-tree.js",
   "extension/out/src/session-usage-log.js",
+  "extension/out/src/session-usage-error.js",
   "extension/out/src/session-usage-reader.js",
+  "extension/out/src/session-usage-worker.js",
   "extension/out/src/status-presentation.js",
   "extension/out/src/visible-refresh.js",
   "extension/package.json",
@@ -198,6 +200,18 @@ if (
 ) {
   throw new Error(
     "Packaged title metadata opt-in must default off and remain machine-scoped.",
+  );
+}
+if (
+  packagedManifest.contributes.configuration.properties[
+    "agShowSessionId.readUsage"
+  ].default !== false ||
+  packagedManifest.contributes.configuration.properties[
+    "agShowSessionId.readUsage"
+  ].scope !== "machine"
+) {
+  throw new Error(
+    "Packaged usage analysis opt-in must default off and remain machine-scoped.",
   );
 }
 if (packagedManifest.enabledApiProposals !== undefined) {

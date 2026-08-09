@@ -38,7 +38,7 @@ This extension shows a **recently saved** session ID. It does not claim to ident
 - Inline and right-click actions to copy the title and ID together, inspect metadata, or set/clear a local title
 - Copy a session row as two lines: its display title, then `Session ID: <UUID>`
 - Open a script-free Session Inspector for bounded timing, response-state, and changed-line metadata when VS Code provides it
-- Explicitly analyze backend-reported AI Credits, request count, and model token totals for one selected session
+- Explicitly analyze backend-reported AI Credits, request count, and input/output token usage for one selected session, with per-model totals when available
 - Copy the UUID alone from the expanded Session ID detail row or the global **Copy Recent ID** command
 - Status bar: `Recent: <title or short UUID>`; selecting it reveals the session in the browser
 - Tooltip shows how many session IDs are saved in the window
@@ -66,7 +66,7 @@ For a local build:
 5. Select the generated `artifacts/vsix/ag-show-session-id-<version>.vsix` and reload VS Code when prompted.
 
 > [!NOTE]
-> Local development builds and the Marketplace release use the same extension ID. Installing a local 0.2.0 VSIX in your normal profile replaces the installed 0.1.0 release. Use `npm run verify:install` for isolated verification, or reinstall the Marketplace version after manual testing.
+> Local development builds and the Marketplace release use the same extension ID. Installing a local 0.2.2 VSIX in your normal profile replaces the installed 0.2.1 release. Use `npm run verify:install` for isolated verification, or reinstall the Marketplace version after manual testing.
 
 ## Enable
 
@@ -77,7 +77,11 @@ The opt-in setting is machine-scoped and is not synchronized to other devices.
 
 Session titles are a separate opt-in. Enable `agShowSessionId.readTitles` from the view toolbar or Settings to read only the `chat.ChatSessionStore.index` entry from VS Code's local read-only state database. Titles can be derived from chat content, remain in memory only, and are never written to logs. Chat messages and JSONL contents are not read by this setting.
 
-AI Credits analysis is another machine-local opt-in. Run **Analyze AI Credits** on a session row to read only that selected session's `.jsonl` or legacy `.json` file. Session files contain chat content; the extension reconstructs the usage fields but retains only session ID, request count, backend-reported AI Credits, and model token totals in an in-memory cache. It does not display, log, persist, cache, or send prompts and responses. Disabling `agShowSessionId.readUsage` clears the cache and immediately closes the open Session Inspector.
+AI Credits analysis is another machine-local opt-in. The Inspector shows **Not analyzed** until you run **Analyze AI Credits** on a session row. The command reads only that selected session's `.jsonl` or legacy `.json` file. Session files contain chat content; the extension reconstructs request/session credits and input/output token fields, including per-model totals when the backend provides them. It retains only the bounded usage summary in memory and does not display, log, persist, cache, or send prompts and responses. Reopening the same saved version of an analyzed session reuses the in-memory result. Disabling `agShowSessionId.readUsage` clears the cache and immediately closes the open Session Inspector.
+
+The bounded session data is parsed in a local worker thread. Cancelling analysis or disabling usage reading terminates active parsing before it can update the cache or Inspector.
+
+If analysis fails, the Inspector identifies common causes such as a missing, changed, unsupported, or oversized session file. The warning action can open the diagnostic Output Channel for the detailed error code.
 
 Display title precedence is: **local title > VS Code metadata title > Session `<short ID>`**. Local titles persist by session ID in the local VS Code profile, follow the session between empty and workspace windows, are not synchronized, and never modify Copilot Chat storage. Early 0.1 development aliases are migrated automatically.
 

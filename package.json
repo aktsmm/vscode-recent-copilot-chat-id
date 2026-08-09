@@ -2,7 +2,7 @@
   "name": "ag-show-session-id",
   "displayName": "Recent Copilot Chat ID",
   "description": "Browses recently saved local Copilot Chat sessions and optionally analyzes backend-reported AI Credits on demand.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "preview": true,
   "publisher": "yamapan",
   "license": "CC-BY-NC-SA-4.0",

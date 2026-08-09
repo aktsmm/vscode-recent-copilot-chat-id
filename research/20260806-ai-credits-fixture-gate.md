@@ -5,7 +5,9 @@ Status: runtime implementation complete in unreleased source; release not publis
 
 ## Decision
 
-Per-session AI Credits use the backend-reported `sessionCopilotCredits` value. Turn-scoped `copilotCredits` values are not summed or converted from tokens. If no session total is reported, the Inspector displays `Not reported`. The parser takes the maximum backend-reported cumulative session total across requests, matching VS Code's session-cost behavior while remaining independent of request order.
+Per-session AI Credits match VS Code's `sessionCost` behavior: use the greater of the summed request-level `copilotCredits` and the maximum cumulative `sessionCopilotCredits`. If neither field is reported, the Inspector displays `Not reported`. Credits are never estimated from tokens.
+
+Token usage prefers per-request `modelTotals` when available. Normal Chat sessions currently persist `promptTokens` and `completionTokens` without `modelTotals`; those values are aggregated as model-unattributed input/output tokens. A request is never counted through both representations.
 
 ## Official storage contract
 
@@ -32,10 +34,14 @@ Sources:
 - The extension prompts with an explicit disclosure before first use.
 - Analysis starts only from the selected session row's **Analyze AI Credits** action.
 - Only `<selected UUID>.jsonl` or its legacy `.json` counterpart is considered.
+- The current `.jsonl` format is always preferred over its legacy `.json` sibling, regardless of modification time. Malformed or unsupported JSONL can fall back to the legacy snapshot, but identity mismatches and file-change checks fail closed.
 - The filename UUID must match the serialized session ID.
 - File size is checked before reading and again by the parser.
-- Analysis is cancellable before and after the bounded file read.
-- Cache entries are memory-only and keyed by session ID, format, mtime, and size.
+- JSONL entries are replayed with a sequential line iterator rather than materializing an array of every line.
+- File type, modification time, and size are rechecked after reading; symlinks are rejected before and after the read.
+- Parsing runs in a local worker thread after the bounded file read. The source bytes are transferred when possible instead of synchronously copied.
+- Cancellation or opt-out terminates active workers before they can populate the cache or UI.
+- Cache entries are memory-only and keyed by session directory, session ID, format, mtime, and size.
 - Disabling the setting increments the reader generation, cancels in-flight results, clears the cache, and closes the open Inspector before any result can be redisplayed.
 - No telemetry or network access is used.
 
@@ -43,15 +49,16 @@ Sources:
 
 - session ID
 - request count
-- maximum backend-reported AI Credits
-- aggregated per-model input, cached, and output tokens
+- backend-reported AI Credits using VS Code session-cost semantics
+- aggregated per-model input, cached, and output tokens when reported
+- aggregated model-unattributed input and output tokens otherwise
 - source modification time
 
 Prompts, responses, references, titles, working directories, paths, and tool payloads may exist in the selected source file but are not returned by the parser, displayed, logged, persisted, or cached.
 
 ## Limits
 
-- 16 MiB UTF-8 input
+- 64 MiB UTF-8 input
 - 2,000 log entries
 - 1,000 requests
 - 100 model totals
@@ -61,6 +68,6 @@ Prompts, responses, references, titles, working directories, paths, and tool pay
 
 ## Verification contract
 
-Tests cover initial snapshot replay, request push/truncate, nested set, delete, flat JSON, exact session totals, zero versus unreported credits, model aggregation, output whitelisting, malformed input, unsupported schema, ID mismatch, dangerous paths, deleted requests, duplicate models, cancellation, cache invalidation, missing files, and package exclusion of tests/fixtures.
+Tests cover initial snapshot replay, request push/truncate, nested set, delete, flat JSON, JSONL precedence and legacy fallback, sequential line replay, request/session credit reconciliation, zero versus unreported credits, model and model-unattributed token aggregation, output whitelisting, malformed input, unsupported schema, ID mismatch, dangerous paths, deleted requests, duplicate models, worker cancellation/termination/protocol validation, cache invalidation, missing files, post-read symlink rejection, and package exclusion of tests/fixtures.
 
 Transcript preview remains a separate privacy decision and cannot reuse usage-analysis consent.

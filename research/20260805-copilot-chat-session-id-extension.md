@@ -10,6 +10,8 @@ brave_api_calls: 3
 
 # Research Overview
 
+> 適用範囲: 0.1 時点の実現性調査。0.2.x で追加した明示 opt-in の使用量分析（選択した1セッションの JSON/JSONL を worker で解析し、概要だけを保持）は [20260806-ai-credits-fixture-gate.md](20260806-ai-credits-fixture-gate.md) を正とする。
+
 ## 目的
 
 VS Code のステータスバーやコマンドから、現在の GitHub Copilot Chat セッション ID を表示・コピーする拡張機能を実現できるか調査した。

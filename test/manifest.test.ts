@@ -149,13 +149,15 @@ test("runtime source keeps the bounded metadata privacy boundary", () => {
     "utf8",
   );
   assert.match(usageLogSource, /sessionCopilotCredits/);
+  assert.match(usageLogSource, /promptTokens/);
+  assert.match(usageLogSource, /completionTokens/);
   for (const file of sourceFiles.filter(
     (name) => name !== "session-usage-log.ts",
   )) {
     const content = readFileSync(path.join(ROOT, "src", file), "utf8");
     assert.doesNotMatch(
       content,
-      /sessionCopilotCredits|modelTotals|copilotCredits/,
+      /sessionCopilotCredits|modelTotals|copilotCredits|promptTokens|completionTokens/,
     );
   }
   assert.doesNotMatch(source, /debug-logs|process\.env\.APPDATA|%APPDATA%/i);
@@ -239,13 +241,23 @@ test("status bar updates flow through the accessible renderer", () => {
     source,
     /private async copyRecent[\s\S]*?this\.copySessionId\(recent\.id\)/,
   );
-  assert.match(source, /this\.inspector\.show\(record\)/);
+  assert.match(source, /this\.inspector\.show\(\s*record,/);
   assert.match(source, /this\.inspector\.dispose\(\)/);
   assert.match(
     source,
-    /this\.usageReader\.clear\(\);\s*this\.inspector\.dispose\(\)/,
+    /this\.usageReader\.clear\(\);\s*this\.displayedUsage\.clear\(\);\s*this\.inspector\.dispose\(\)/,
   );
   assert.match(source, /if \(!this\.isUsageReadingEnabled\(\)\)/);
+  assert.match(
+    source,
+    /private async openInspector[\s\S]*?if \(!this\.isUsageReadingEnabled\(\)\) \{\s*this\.usageReader\.clear\(\);\s*this\.displayedUsage\.clear\(\);\s*return;\s*\}\s*if \(inspectorGeneration !== this\.usageAnalysisGeneration\) \{\s*return;/,
+  );
+  assert.match(source, /private usageAnalysisGeneration = 0/);
+  assert.match(
+    source,
+    /private async openInspector[\s\S]*?const inspectorGeneration = \+\+this\.usageAnalysisGeneration/,
+  );
+  assert.match(source, /analysisGeneration !== this\.usageAnalysisGeneration/g);
 });
 
 test("commands use a single palette category", () => {
@@ -415,6 +427,33 @@ test("packaging derives the VSIX filename from package metadata", () => {
     const content = readFileSync(path.join(ROOT, readme), "utf8");
     assert.doesNotMatch(content, /ag-show-session-id-\d+\.\d+\.\d+\.vsix/);
   }
+});
+
+test("the worker entry point stays compiled and packaged", () => {
+  const reader = readFileSync(
+    path.join(ROOT, "src", "session-usage-reader.ts"),
+    "utf8",
+  );
+  const workerModule = reader.match(
+    /new Worker\(\s*path\.join\(__dirname, "(?<file>[^"]+)\.js"\)/,
+  )?.groups?.file;
+  assert.ok(workerModule, "Usage analysis must spawn a bundled worker module");
+  assert.ok(
+    readdirSync(path.join(ROOT, "src")).includes(`${workerModule}.ts`),
+    `Worker source is missing: src/${workerModule}.ts`,
+  );
+  assert.ok(
+    readdirSync(path.join(ROOT, "out", "src")).includes(`${workerModule}.js`),
+    `Worker output is missing: out/src/${workerModule}.js`,
+  );
+  const verifier = readFileSync(
+    path.join(ROOT, "scripts", "verify-vsix.mjs"),
+    "utf8",
+  );
+  assert.ok(
+    verifier.includes(`"extension/out/src/${workerModule}.js"`),
+    `Packaged payload must include out/src/${workerModule}.js`,
+  );
 });
 
 test("the English and Japanese readmes link to each other", () => {

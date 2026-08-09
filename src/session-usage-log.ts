@@ -1,7 +1,10 @@
-export const MAX_SESSION_USAGE_LOG_BYTES = 16 * 1024 * 1024;
+import { SessionUsageErrorCode } from "./session-usage-error";
+
+export const MAX_SESSION_USAGE_LOG_BYTES = 64 * 1024 * 1024;
 export const MAX_SESSION_USAGE_LOG_ENTRIES = 2_000;
 export const MAX_SESSION_USAGE_REQUESTS = 1_000;
 export const MAX_SESSION_USAGE_MODELS = 100;
+export const MAX_SESSION_USAGE_MODEL_NAME_LENGTH = 200;
 export const MAX_SESSION_USAGE_PATH_SEGMENTS = 16;
 
 export interface SessionUsageModelTotal {
@@ -16,10 +19,17 @@ export interface SessionUsageSummary {
   readonly requestCount: number;
   readonly aiCredits?: number;
   readonly models: readonly SessionUsageModelTotal[];
+  readonly unattributedTokens?: {
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+  };
 }
 
 interface RequestUsage {
+  copilotCredits?: number;
   sessionCopilotCredits?: number;
+  promptTokens?: number;
+  completionTokens?: number;
   modelTotals?: readonly SessionUsageModelTotal[];
 }
 
@@ -63,7 +73,7 @@ export function analyzeSessionUsageLog(
 
   let state: UsageState | undefined;
   let entryCount = 0;
-  for (const rawLine of content.split(/\r?\n/)) {
+  for (const rawLine of iterateLines(content)) {
     if (!rawLine.trim()) {
       continue;
     }
@@ -106,6 +116,20 @@ export function analyzeSessionUsageLog(
     fail("SessionUsageEmptyLog");
   }
   return summarize(state);
+}
+
+function* iterateLines(content: string): Generator<string> {
+  let start = 0;
+  while (start <= content.length) {
+    const newline = content.indexOf("\n", start);
+    const end = newline === -1 ? content.length : newline;
+    const line = content.slice(start, end);
+    yield line.endsWith("\r") ? line.slice(0, -1) : line;
+    if (newline === -1) {
+      return;
+    }
+    start = newline + 1;
+  }
 }
 
 function parseEntry(rawLine: string): LogEntry {
@@ -173,7 +197,7 @@ function applySet(
     state.requests[requestIndex] = parseRequestUsage(value);
     return;
   }
-  if (path[2] !== "sessionCopilotCredits" && path[2] !== "modelTotals") {
+  if (!isUsageField(path[2])) {
     return;
   }
   if (path.length !== 3) {
@@ -183,10 +207,22 @@ function applySet(
   if (!request) {
     fail("SessionUsageMissingRequest");
   }
-  if (path[2] === "sessionCopilotCredits") {
-    request.sessionCopilotCredits = parseCredits(value);
-  } else {
-    request.modelTotals = parseModelTotals(value);
+  switch (path[2]) {
+    case "copilotCredits":
+      request.copilotCredits = parseCredits(value);
+      break;
+    case "sessionCopilotCredits":
+      request.sessionCopilotCredits = parseCredits(value);
+      break;
+    case "promptTokens":
+      request.promptTokens = parseTokenCount(value);
+      break;
+    case "completionTokens":
+      request.completionTokens = parseTokenCount(value);
+      break;
+    case "modelTotals":
+      request.modelTotals = parseModelTotals(value);
+      break;
   }
 }
 
@@ -234,7 +270,7 @@ function applyDelete(
     state.requests[requestIndex] = undefined;
     return;
   }
-  if (path[2] !== "sessionCopilotCredits" && path[2] !== "modelTotals") {
+  if (!isUsageField(path[2])) {
     return;
   }
   if (path.length !== 3) {
@@ -244,10 +280,22 @@ function applyDelete(
   if (!request) {
     fail("SessionUsageMissingRequest");
   }
-  if (path[2] === "sessionCopilotCredits") {
-    delete request.sessionCopilotCredits;
-  } else {
-    delete request.modelTotals;
+  switch (path[2]) {
+    case "copilotCredits":
+      delete request.copilotCredits;
+      break;
+    case "sessionCopilotCredits":
+      delete request.sessionCopilotCredits;
+      break;
+    case "promptTokens":
+      delete request.promptTokens;
+      break;
+    case "completionTokens":
+      delete request.completionTokens;
+      break;
+    case "modelTotals":
+      delete request.modelTotals;
+      break;
   }
 }
 
@@ -261,9 +309,18 @@ function parseRequestUsage(value: unknown): RequestUsage {
     fail("SessionUsageInvalidRequest");
   }
   return {
+    ...(value.copilotCredits === undefined
+      ? {}
+      : { copilotCredits: parseCredits(value.copilotCredits) }),
     ...(value.sessionCopilotCredits === undefined
       ? {}
       : { sessionCopilotCredits: parseCredits(value.sessionCopilotCredits) }),
+    ...(value.promptTokens === undefined
+      ? {}
+      : { promptTokens: parseTokenCount(value.promptTokens) }),
+    ...(value.completionTokens === undefined
+      ? {}
+      : { completionTokens: parseTokenCount(value.completionTokens) }),
     ...(value.modelTotals === undefined
       ? {}
       : { modelTotals: parseModelTotals(value.modelTotals) }),
@@ -273,6 +330,13 @@ function parseRequestUsage(value: unknown): RequestUsage {
 function parseCredits(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     fail("SessionUsageInvalidCredits");
+  }
+  return value;
+}
+
+function parseTokenCount(value: unknown): number {
+  if (!isCount(value)) {
+    fail("SessionUsageInvalidTokenCount");
   }
   return value;
 }
@@ -287,7 +351,7 @@ function parseModelTotals(value: unknown): readonly SessionUsageModelTotal[] {
       !isRecord(entry) ||
       typeof entry.model !== "string" ||
       !entry.model ||
-      entry.model.length > 200 ||
+      entry.model.length > MAX_SESSION_USAGE_MODEL_NAME_LENGTH ||
       !isCount(entry.inputTokens) ||
       !isCount(entry.cachedTokens) ||
       !isCount(entry.outputTokens)
@@ -308,14 +372,24 @@ function parseModelTotals(value: unknown): readonly SessionUsageModelTotal[] {
 }
 
 function summarize(state: UsageState): SessionUsageSummary {
+  let summedCopilotCredits: number | undefined;
   let sessionCopilotCredits: number | undefined;
   const totals = new Map<string, SessionUsageModelTotal>();
+  let unattributedInputTokens: number | undefined;
+  let unattributedOutputTokens: number | undefined;
   let requestCount = 0;
   for (const request of state.requests) {
     if (!request) {
       continue;
     }
     requestCount++;
+    if (request.copilotCredits !== undefined) {
+      summedCopilotCredits = safeAdd(
+        summedCopilotCredits ?? 0,
+        request.copilotCredits,
+        "SessionUsageCreditsOverflow",
+      );
+    }
     if (request.sessionCopilotCredits !== undefined) {
       sessionCopilotCredits = Math.max(
         sessionCopilotCredits ?? 0,
@@ -326,10 +400,38 @@ function summarize(state: UsageState): SessionUsageSummary {
       const previous = totals.get(entry.model);
       totals.set(entry.model, {
         model: entry.model,
-        inputTokens: (previous?.inputTokens ?? 0) + entry.inputTokens,
-        cachedTokens: (previous?.cachedTokens ?? 0) + entry.cachedTokens,
-        outputTokens: (previous?.outputTokens ?? 0) + entry.outputTokens,
+        inputTokens: safeAdd(
+          previous?.inputTokens ?? 0,
+          entry.inputTokens,
+          "SessionUsageTokenOverflow",
+        ),
+        cachedTokens: safeAdd(
+          previous?.cachedTokens ?? 0,
+          entry.cachedTokens,
+          "SessionUsageTokenOverflow",
+        ),
+        outputTokens: safeAdd(
+          previous?.outputTokens ?? 0,
+          entry.outputTokens,
+          "SessionUsageTokenOverflow",
+        ),
       });
+    }
+    if ((request.modelTotals?.length ?? 0) === 0) {
+      if (request.promptTokens !== undefined) {
+        unattributedInputTokens = safeAdd(
+          unattributedInputTokens ?? 0,
+          request.promptTokens,
+          "SessionUsageTokenOverflow",
+        );
+      }
+      if (request.completionTokens !== undefined) {
+        unattributedOutputTokens = safeAdd(
+          unattributedOutputTokens ?? 0,
+          request.completionTokens,
+          "SessionUsageTokenOverflow",
+        );
+      }
     }
   }
   if (totals.size > MAX_SESSION_USAGE_MODELS) {
@@ -338,13 +440,57 @@ function summarize(state: UsageState): SessionUsageSummary {
   return {
     sessionId: state.sessionId,
     requestCount,
-    ...(sessionCopilotCredits === undefined
+    ...(summedCopilotCredits === undefined &&
+    sessionCopilotCredits === undefined
       ? {}
-      : { aiCredits: sessionCopilotCredits }),
+      : {
+          aiCredits: Math.max(
+            summedCopilotCredits ?? 0,
+            sessionCopilotCredits ?? 0,
+          ),
+        }),
     models: [...totals.values()].sort((left, right) =>
       left.model.localeCompare(right.model),
     ),
+    ...(unattributedInputTokens === undefined &&
+    unattributedOutputTokens === undefined
+      ? {}
+      : {
+          unattributedTokens: {
+            inputTokens: unattributedInputTokens ?? 0,
+            outputTokens: unattributedOutputTokens ?? 0,
+          },
+        }),
   };
+}
+
+function isUsageField(value: string | number): value is string {
+  return (
+    value === "copilotCredits" ||
+    value === "sessionCopilotCredits" ||
+    value === "promptTokens" ||
+    value === "completionTokens" ||
+    value === "modelTotals"
+  );
+}
+
+function safeAdd(
+  left: number,
+  right: number,
+  code: SessionUsageErrorCode,
+): number {
+  const total = left + right;
+  if (
+    !Number.isSafeInteger(total) &&
+    Number.isInteger(left) &&
+    Number.isInteger(right)
+  ) {
+    fail(code);
+  }
+  if (!Number.isFinite(total)) {
+    fail(code);
+  }
+  return total;
 }
 
 function parsePath(value: unknown): readonly (string | number)[] {
@@ -390,7 +536,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function fail(code: string): never {
+function fail(code: SessionUsageErrorCode): never {
   const error = new Error(code);
   error.name = code;
   throw error;

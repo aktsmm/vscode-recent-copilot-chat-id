@@ -3,6 +3,7 @@ import { SessionResponseState } from "./session-index";
 import { formatAbsoluteTime } from "./session-tree-model";
 import { Translate } from "./status-presentation";
 import { SessionUsageSummary } from "./session-usage-log";
+import { SessionUsageErrorCode } from "./session-usage-error";
 
 export interface SessionInspectorField {
   readonly label: string;
@@ -22,7 +23,7 @@ export type SessionInspectorUsage =
       readonly summary: SessionUsageSummary;
       readonly sourceModifiedAt: number;
     }
-  | { readonly kind: "error" };
+  | { readonly kind: "error"; readonly errorCode: SessionUsageErrorCode };
 
 export function buildSessionInspectorModel(
   record: SessionRecord,
@@ -45,7 +46,11 @@ export function buildSessionInspectorModel(
     },
     {
       label: t("Last request started"),
-      value: formatOptionalTime(timing?.lastRequestStarted, locale, unavailable),
+      value: formatOptionalTime(
+        timing?.lastRequestStarted,
+        locale,
+        unavailable,
+      ),
     },
     {
       label: t("Last request ended"),
@@ -58,7 +63,8 @@ export function buildSessionInspectorModel(
     {
       label: t("Response state"),
       value:
-        responseStateLabel(record.metadata?.lastResponseState, t) ?? unavailable,
+        responseStateLabel(record.metadata?.lastResponseState, t) ??
+        unavailable,
     },
     {
       label: t("Changed files"),
@@ -74,11 +80,39 @@ export function buildSessionInspectorModel(
     },
   ];
 
-  if (usage?.kind === "error") {
-    fields.push({ label: t("AI Credits"), value: unavailable });
+  if (!usage) {
+    fields.push({ label: t("Usage analysis"), value: t("Not analyzed") });
+  } else if (usage.kind === "error") {
+    fields.push(
+      {
+        label: t("Usage analysis"),
+        value: describeSessionUsageError(usage.errorCode, t),
+      },
+      { label: t("AI Credits"), value: unavailable },
+      { label: t("Token usage"), value: unavailable },
+    );
   } else if (usage?.kind === "ok") {
     const numberFormatter = new Intl.NumberFormat(locale);
+    const tokenUsage = usage.summary.models.map((model) =>
+      t(
+        "{0}: input {1}, cached {2}, output {3}",
+        model.model,
+        numberFormatter.format(model.inputTokens),
+        numberFormatter.format(model.cachedTokens),
+        numberFormatter.format(model.outputTokens),
+      ),
+    );
+    if (usage.summary.unattributedTokens) {
+      tokenUsage.push(
+        t(
+          "Model not reported: input {0}, output {1}",
+          numberFormatter.format(usage.summary.unattributedTokens.inputTokens),
+          numberFormatter.format(usage.summary.unattributedTokens.outputTokens),
+        ),
+      );
+    }
     fields.push(
+      { label: t("Usage analysis"), value: t("Complete") },
       {
         label: t("AI Credits"),
         value:
@@ -93,21 +127,9 @@ export function buildSessionInspectorModel(
         value: numberFormatter.format(usage.summary.requestCount),
       },
       {
-        label: t("Model token usage"),
+        label: t("Token usage"),
         value:
-          usage.summary.models.length === 0
-            ? t("Not reported")
-            : usage.summary.models
-                .map((model) =>
-                  t(
-                    "{0}: input {1}, cached {2}, output {3}",
-                    model.model,
-                    numberFormatter.format(model.inputTokens),
-                    numberFormatter.format(model.cachedTokens),
-                    numberFormatter.format(model.outputTokens),
-                  ),
-                )
-                .join("\n"),
+          tokenUsage.length === 0 ? t("Not reported") : tokenUsage.join("\n"),
       },
       {
         label: t("Usage source modified"),
@@ -130,6 +152,57 @@ export function buildSessionInspectorModel(
     fields,
     note: usageNote ? `${indexNote}\n\n${usageNote}` : indexNote,
   };
+}
+
+export function describeSessionUsageError(
+  errorCode: SessionUsageErrorCode,
+  t: Translate,
+): string {
+  switch (errorCode) {
+    case "SessionUsageCancelled":
+      return t("The analysis was cancelled.");
+    case "SessionUsageFileNotFound":
+      return t("The local session file is no longer available.");
+    case "SessionUsageLogTooLarge":
+      return t("The session file exceeds the 64 MiB analysis limit.");
+    case "SessionUsageFileChanged":
+      return t("The session changed during analysis. Run the analysis again.");
+    case "SessionUsageUnsupportedSchema":
+      return t("This saved session format is not supported.");
+    case "SessionUsageInvalidSessionId":
+      return t("The selected session ID is invalid.");
+    case "SessionUsageSessionIdMismatch":
+      return t("The session file does not match the selected session.");
+    case "SessionUsageTooManyEntries":
+    case "SessionUsageTooManyModels":
+    case "SessionUsageTooManyRequests":
+    case "SessionUsageCreditsOverflow":
+    case "SessionUsageTokenOverflow":
+      return t("The saved session exceeds a supported analysis limit.");
+    case "SessionUsageDuplicateModelTotal":
+    case "SessionUsageEmptyLog":
+    case "SessionUsageInvalidCredits":
+    case "SessionUsageInvalidEntry":
+    case "SessionUsageInvalidModelTotals":
+    case "SessionUsageInvalidPath":
+    case "SessionUsageInvalidPushIndex":
+    case "SessionUsageInvalidPushValues":
+    case "SessionUsageInvalidRequest":
+    case "SessionUsageInvalidRequestIndex":
+    case "SessionUsageInvalidRequests":
+    case "SessionUsageInvalidTokenCount":
+    case "SessionUsageMalformedJson":
+    case "SessionUsageMissingInitialEntry":
+    case "SessionUsageMissingRequest":
+    case "SessionUsageUnexpectedInitialEntry":
+    case "SessionUsageUnknownEntryKind":
+      return t("The saved session data is malformed or incomplete.");
+    case "SessionUsageReadFailed":
+    default:
+      return t(
+        "The saved session data could not be analyzed. Open the output log for details.",
+      );
+  }
 }
 
 function formatOptionalTime(

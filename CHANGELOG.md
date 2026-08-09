@@ -1,5 +1,16 @@
 # Change Log
 
+## 0.2.2 - 2026-08-09
+
+- Read request-level `copilotCredits`, `promptTokens`, and `completionTokens` used by normal Chat sessions instead of requiring Agent Host-only totals.
+- Match VS Code's session-cost calculation and display model-unattributed input/output token totals.
+- Raise the bounded usage input limit from 16 MiB to 64 MiB for long sessions.
+- Distinguish not-analyzed, reported, unreported, and failed usage states, and preserve analyzed results when reopening the same saved session.
+- Prefer current JSONL sessions over legacy JSON snapshots, replay lines without allocating a full line array, and revalidate cached display data and file type before reuse.
+- Verify the packaged usage-analysis opt-in remains machine-scoped and disabled by default.
+- Replace raw usage-analysis error codes with localized, recovery-oriented reasons and an action that opens the diagnostic Output Channel.
+- Move bounded usage parsing to a cancellable local worker thread with transferable bytes and validated request/result messages.
+
 ## 0.2.1 - 2026-08-06
 
 - Keep version-guard tests deterministic before and after a release tag is created.

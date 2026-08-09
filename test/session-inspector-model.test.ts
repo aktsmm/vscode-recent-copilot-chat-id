@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSessionInspectorModel } from "../src/session-inspector-model";
+import {
+  buildSessionInspectorModel,
+  describeSessionUsageError,
+} from "../src/session-inspector-model";
+import { SESSION_USAGE_ERROR_CODES } from "../src/session-usage-error";
 import { SessionRecord } from "../src/session-model";
 import { formatAbsoluteTime } from "../src/session-tree-model";
 
@@ -54,6 +58,7 @@ test("buildSessionInspectorModel presents bounded index metadata", () => {
       ["Changed files", "2"],
       ["Lines added", "30"],
       ["Lines removed", "4"],
+      ["Usage analysis", "Not analyzed"],
     ],
   );
 });
@@ -75,7 +80,7 @@ test("buildSessionInspectorModel marks unavailable optional metadata", () => {
   );
 });
 
-test("buildSessionInspectorModel presents reported AI Credits and model totals", () => {
+test("buildSessionInspectorModel presents reported AI Credits and token totals", () => {
   const model = buildSessionInspectorModel(
     {
       id: SESSION_ID,
@@ -100,15 +105,20 @@ test("buildSessionInspectorModel presents reported AI Credits and model totals",
             outputTokens: 17,
           },
         ],
+        unattributedTokens: { inputTokens: 20, outputTokens: 4 },
       },
     },
   );
   assert.deepEqual(
-    model.fields.slice(-4).map((field) => [field.label, field.value]),
+    model.fields.slice(-5).map((field) => [field.label, field.value]),
     [
+      ["Usage analysis", "Complete"],
       ["AI Credits", "12.75"],
       ["Requests analyzed", "2"],
-      ["Model token usage", "gpt-5: input 160, cached 32, output 17"],
+      [
+        "Token usage",
+        "gpt-5: input 160, cached 32, output 17\nModel not reported: input 20, output 4",
+      ],
       [
         "Usage source modified",
         formatAbsoluteTime(Date.UTC(2026, 7, 6, 10, 6), "en-US"),
@@ -140,9 +150,58 @@ test("buildSessionInspectorModel distinguishes unreported usage and errors", () 
   );
   const failed = buildSessionInspectorModel(record, "en-US", translate, {
     kind: "error",
+    errorCode: "SessionUsageUnsupportedSchema",
   });
   assert.equal(
     failed.fields.find((field) => field.label === "AI Credits")?.value,
     "Not available",
   );
+  assert.equal(
+    failed.fields.find((field) => field.label === "Usage analysis")?.value,
+    "This saved session format is not supported.",
+  );
+});
+
+test("describeSessionUsageError classifies every safe error code", () => {
+  const cases: Array<[string, string]> = [
+    [
+      "SessionUsageFileNotFound",
+      "The local session file is no longer available.",
+    ],
+    [
+      "SessionUsageLogTooLarge",
+      "The session file exceeds the 64 MiB analysis limit.",
+    ],
+    [
+      "SessionUsageFileChanged",
+      "The session changed during analysis. Run the analysis again.",
+    ],
+    [
+      "SessionUsageUnsupportedSchema",
+      "This saved session format is not supported.",
+    ],
+    ["SessionUsageInvalidSessionId", "The selected session ID is invalid."],
+    [
+      "SessionUsageSessionIdMismatch",
+      "The session file does not match the selected session.",
+    ],
+    [
+      "SessionUsageMalformedJson",
+      "The saved session data is malformed or incomplete.",
+    ],
+  ];
+  for (const [code, expected] of cases) {
+    assert.equal(
+      describeSessionUsageError(
+        code as (typeof SESSION_USAGE_ERROR_CODES)[number],
+        translate,
+      ),
+      expected,
+    );
+  }
+  for (const code of SESSION_USAGE_ERROR_CODES) {
+    const message = describeSessionUsageError(code, translate);
+    assert.ok(message);
+    assert.doesNotMatch(message, /SessionUsage|[A-Za-z]:\\/);
+  }
 });
