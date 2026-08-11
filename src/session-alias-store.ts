@@ -8,6 +8,11 @@ export interface AliasState {
   update(key: string, value: unknown): PromiseLike<void>;
 }
 
+interface LegacyAliasSnapshot {
+  readonly primary: Readonly<Record<string, string>>;
+  readonly legacy: readonly Readonly<Record<string, string>>[];
+}
+
 export class SessionAliasStore {
   constructor(
     private readonly state: AliasState,
@@ -15,32 +20,16 @@ export class SessionAliasStore {
   ) {}
 
   get(id: string): string | undefined {
-    const primary = this.readDirect(this.state, id);
-    if (primary !== undefined) {
-      return primary ?? undefined;
-    }
-    const primaryLegacy = this.readLegacyAliases(this.state)[id];
-    if (primaryLegacy) {
-      return primaryLegacy;
-    }
-    for (const state of this.legacyStates) {
-      const direct = this.readDirect(state, id);
-      if (direct !== undefined) {
-        return direct ?? undefined;
-      }
-      const legacy = this.readLegacyAliases(state)[id];
-      if (legacy) {
-        return legacy;
-      }
-    }
-    return undefined;
+    return this.resolve(id, this.snapshotLegacyAliases());
   }
 
   getAll(ids: readonly string[] = []): Readonly<Record<string, string>> {
     if (ids.length > 0) {
+      // One snapshot per batch keeps large legacy maps from being rebuilt per id.
+      const snapshot = this.snapshotLegacyAliases();
       return Object.fromEntries(
         ids
-          .map((id) => [id, this.get(id)] as const)
+          .map((id) => [id, this.resolve(id, snapshot)] as const)
           .filter((entry): entry is readonly [string, string] =>
             Boolean(entry[1]),
           ),
@@ -50,15 +39,48 @@ export class SessionAliasStore {
   }
 
   async migrate(ids: readonly string[]): Promise<void> {
+    const snapshot = this.snapshotLegacyAliases();
     for (const id of ids) {
       if (this.readDirect(this.state, id) !== undefined) {
         continue;
       }
-      const alias = this.get(id);
+      const alias = this.resolve(id, snapshot);
       if (alias) {
         await this.state.update(`${ALIAS_KEY_PREFIX}${id}`, alias);
       }
     }
+  }
+
+  private snapshotLegacyAliases(): LegacyAliasSnapshot {
+    return {
+      primary: this.readLegacyAliases(this.state),
+      legacy: this.legacyStates.map((state) => this.readLegacyAliases(state)),
+    };
+  }
+
+  private resolve(
+    id: string,
+    snapshot: LegacyAliasSnapshot,
+  ): string | undefined {
+    const primary = this.readDirect(this.state, id);
+    if (primary !== undefined) {
+      return primary ?? undefined;
+    }
+    const primaryLegacy = snapshot.primary[id];
+    if (primaryLegacy) {
+      return primaryLegacy;
+    }
+    for (const [position, state] of this.legacyStates.entries()) {
+      const direct = this.readDirect(state, id);
+      if (direct !== undefined) {
+        return direct ?? undefined;
+      }
+      const legacy = snapshot.legacy[position][id];
+      if (legacy) {
+        return legacy;
+      }
+    }
+    return undefined;
   }
 
   private readDirect(state: AliasState, id: string): string | null | undefined {

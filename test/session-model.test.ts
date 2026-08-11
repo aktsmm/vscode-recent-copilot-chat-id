@@ -11,6 +11,11 @@ import {
 } from "../src/session-model";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
+const translate = (message: string, ...args: string[]): string =>
+  args.reduce(
+    (text, value, index) => text.replaceAll(`{${index}}`, value),
+    message,
+  );
 const sessions = [{ id: SESSION_ID, modifiedAt: 500 }];
 const metadata = new Map<string, SessionIndexMetadata>([
   [
@@ -24,18 +29,23 @@ const metadata = new Map<string, SessionIndexMetadata>([
 ]);
 
 test("buildSessionRecords applies alias, metadata, and ID title precedence", () => {
-  const aliased = buildSessionRecords(sessions, metadata, {
-    [SESSION_ID]: " Local investigation ",
-  })[0];
+  const aliased = buildSessionRecords(
+    sessions,
+    metadata,
+    {
+      [SESSION_ID]: " Local investigation ",
+    },
+    translate,
+  )[0];
   assert.equal(aliased.displayTitle, "Local investigation");
   assert.equal(aliased.titleSource, "alias");
   assert.equal(aliased.metadataTitle, "Authentication failure");
 
-  const indexed = buildSessionRecords(sessions, metadata, {})[0];
+  const indexed = buildSessionRecords(sessions, metadata, {}, translate)[0];
   assert.equal(indexed.displayTitle, "Authentication failure");
   assert.equal(indexed.titleSource, "metadata");
 
-  const fallback = buildSessionRecords(sessions, new Map(), {})[0];
+  const fallback = buildSessionRecords(sessions, new Map(), {}, translate)[0];
   assert.equal(fallback.displayTitle, "Session 11111111");
   assert.equal(fallback.titleSource, "id");
 });
@@ -48,7 +58,7 @@ test("buildSessionRecords joins metadata only to filename-derived IDs", () => {
     lastMessageDate: 999,
   });
 
-  const records = buildSessionRecords(sessions, extra, {});
+  const records = buildSessionRecords(sessions, extra, {}, translate);
   assert.equal(records.length, 1);
   assert.equal(records[0].id, SESSION_ID);
 });
@@ -70,9 +80,14 @@ test("normalizeSessionAlias trims whitespace, clears empty values, and caps leng
 });
 
 test("invalid stored aliases are ignored without breaking the list", () => {
-  const record = buildSessionRecords(sessions, metadata, {
-    [SESSION_ID]: "a".repeat(MAX_SESSION_ALIAS_LENGTH + 1),
-  })[0];
+  const record = buildSessionRecords(
+    sessions,
+    metadata,
+    {
+      [SESSION_ID]: "a".repeat(MAX_SESSION_ALIAS_LENGTH + 1),
+    },
+    translate,
+  )[0];
   assert.equal(record.displayTitle, "Authentication failure");
   assert.equal(record.titleSource, "metadata");
 });
@@ -90,6 +105,7 @@ test("metadata titles retain the full value but bound the display title", () => 
       [SESSION_ID, { id: SESSION_ID, title: longTitle, lastMessageDate: 400 }],
     ]),
     {},
+    translate,
   )[0];
 
   assert.equal(record.metadataTitle, longTitle);
@@ -98,7 +114,7 @@ test("metadata titles retain the full value but bound the display title", () => 
 });
 
 test("selectSessionRecord never falls back for a missing requested session", () => {
-  const records = buildSessionRecords(sessions, metadata, {});
+  const records = buildSessionRecords(sessions, metadata, {}, translate);
   assert.equal(selectSessionRecord(records)?.id, SESSION_ID);
   assert.equal(selectSessionRecord(records, SESSION_ID)?.id, SESSION_ID);
   assert.equal(

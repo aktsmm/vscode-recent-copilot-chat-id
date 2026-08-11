@@ -38,6 +38,60 @@ test("buildSessionTreeRows exposes title, short ID, time, and source", () => {
   assert.match(row.tooltip, /VS Code metadata/);
   assert.equal(row.sourceLabel, "VS Code metadata");
   assert.equal(row.hasAlias, false);
+  assert.equal(row.icon, "comment-discussion");
+  assert.equal(row.iconColor, undefined);
+  assert.equal(row.stateLabel, undefined);
+});
+
+test("buildSessionTreeRows neutralizes markdown in chat-derived titles", () => {
+  const [row] = buildSessionTreeRows(
+    [record({ displayTitle: "![x](https://example.invalid/p) **bold**" })],
+    "en-US",
+    translate,
+    Date.UTC(2026, 7, 5, 10, 5),
+  );
+
+  assert.equal(row.label, "![x](https://example.invalid/p) **bold**");
+  assert.doesNotMatch(row.tooltip, /!\[x\]\(https/);
+  assert.doesNotMatch(row.tooltip, /\*\*bold\*\*/);
+  assert.match(row.tooltip, /\\!\\\[x\\\]\\\(https/);
+});
+
+test("buildSessionTreeRows signals the saved response state", () => {
+  const cases: [
+    "pending" | "complete" | "cancelled" | "failed" | "needsInput",
+    string,
+    string | undefined,
+    string,
+  ][] = [
+    ["complete", "comment-discussion", undefined, "Complete"],
+    ["cancelled", "circle-slash", undefined, "Cancelled"],
+    ["failed", "error", "list.errorForeground", "Failed"],
+    ["needsInput", "question", "list.warningForeground", "Needs input"],
+    ["pending", "sync", undefined, "Pending"],
+  ];
+
+  for (const [state, icon, iconColor, label] of cases) {
+    const [row] = buildSessionTreeRows(
+      [
+        record({
+          metadata: {
+            id: SESSION_ID,
+            title: "Authentication failure",
+            lastMessageDate: Date.UTC(2026, 7, 5, 10, 0),
+            lastResponseState: state,
+          },
+        }),
+      ],
+      "en-US",
+      translate,
+      Date.UTC(2026, 7, 5, 10, 5),
+    );
+    assert.equal(row.icon, icon, state);
+    assert.equal(row.iconColor, iconColor, state);
+    assert.equal(row.stateLabel, label, state);
+    assert.match(row.tooltip, new RegExp(`Response state: ${label}$`), state);
+  }
 });
 
 test("buildSessionTreeRows identifies aliases for context menus", () => {

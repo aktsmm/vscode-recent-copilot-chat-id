@@ -1,6 +1,22 @@
-import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { parseSessionId } from "./session-scanner";
+
+export type SqliteModule = typeof import("node:sqlite");
+type SqliteDatabase = InstanceType<SqliteModule["DatabaseSync"]>;
+
+let cachedSqlite: SqliteModule | null | undefined;
+
+/** The builtin is loaded lazily so an unexpected runtime cannot break activation. */
+export function loadSqliteModule(): SqliteModule | undefined {
+  if (cachedSqlite === undefined) {
+    try {
+      cachedSqlite = require("node:sqlite") as SqliteModule;
+    } catch {
+      cachedSqlite = null;
+    }
+  }
+  return cachedSqlite ?? undefined;
+}
 
 export const CHAT_SESSION_INDEX_KEY = "chat.ChatSessionStore.index";
 export const SESSION_INDEX_DATABASE_GLOB = "state.vscdb*";
@@ -50,6 +66,7 @@ const SESSION_INDEX_ERROR_CODES = [
   "InvalidSessionIndexTiming",
   "SessionIndexReadFailed",
   "SessionIndexTooLarge",
+  "SessionIndexUnsupportedRuntime",
   "SessionMetadataTitleTooLong",
   "TooManySessionIndexEntries",
   "UnsupportedSessionIndex",
@@ -137,10 +154,15 @@ export function parseSessionIndex(
 export function readSessionIndex(
   databasePath: string,
   allowedIds?: ReadonlySet<string>,
+  loadSqlite: () => SqliteModule | undefined = loadSqliteModule,
 ): SessionIndexReadResult {
-  let database: DatabaseSync | undefined;
+  const sqlite = loadSqlite();
+  if (!sqlite) {
+    return { entries: new Map(), errorCode: "SessionIndexUnsupportedRuntime" };
+  }
+  let database: SqliteDatabase | undefined;
   try {
-    database = new DatabaseSync(databasePath, { readOnly: true });
+    database = new sqlite.DatabaseSync(databasePath, { readOnly: true });
     const sizeRow = database
       .prepare(
         "SELECT length(CAST(value AS BLOB)) AS size FROM ItemTable WHERE key = ?",

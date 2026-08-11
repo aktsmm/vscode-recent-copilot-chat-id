@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import {
@@ -8,15 +8,12 @@ import {
   describeUnavailableStatus,
 } from "../src/status-presentation";
 import { buildSessionTreeRows } from "../src/session-tree-model";
+import { buildSessionQuickPickEntries } from "../src/session-quick-pick";
 
 const ROOT = path.resolve(__dirname, "../..");
 
 function readJson(...segments: string[]): Record<string, string> {
   return JSON.parse(readFileSync(path.join(ROOT, ...segments), "utf8"));
-}
-
-function readSource(name: string): string {
-  return readFileSync(path.join(ROOT, "src", name), "utf8");
 }
 
 const manifest = JSON.parse(
@@ -46,24 +43,8 @@ test("manifest declares the runtime l10n bundle folder", () => {
   assert.equal(manifest.l10n, "./l10n");
 });
 
-test("every runtime l10n string has a Japanese translation", () => {
-  const source = readdirSync(path.join(ROOT, "src"))
-    .filter((name) => name.endsWith(".ts"))
-    .map(readSource)
-    .join("\n");
-  const runtimeStrings = [
-    ...source.matchAll(/vscode\.l10n\.t\(\s*"((?:[^"\\]|\\.)*)"/g),
-  ].map((match) => JSON.parse(`"${match[1]}"`) as string);
-
-  assert.ok(runtimeStrings.length > 0);
-  for (const message of runtimeStrings) {
-    assert.ok(
-      message in japaneseBundle,
-      `Missing Japanese translation: ${message}`,
-    );
-  }
-});
-
+// Literal message keys, their translations, and the log policy are enforced by
+// the AST scan in source-policy.test.ts. These tests cover the runtime paths.
 test("every status bar string has a Japanese translation", () => {
   const collected: string[] = [];
   const collect = (message: string, ...args: string[]): string => {
@@ -111,10 +92,50 @@ test("every status bar string has a Japanese translation", () => {
     collect,
     400,
   );
-  const inspectorSource = readSource("session-inspector-model.ts");
-  for (const match of inspectorSource.matchAll(/t\(\s*"((?:[^"\\]|\\.)*)"/g)) {
-    collected.push(JSON.parse(`"${match[1]}"`) as string);
-  }
+  buildSessionTreeRows(
+    [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        modifiedAt: 300,
+        displayTitle: "Authentication failure",
+        titleSource: "metadata",
+        metadata: {
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Authentication failure",
+          lastMessageDate: 300,
+          lastResponseState: "failed",
+        },
+      },
+    ],
+    "en-US",
+    collect,
+    400,
+  );
+  buildSessionQuickPickEntries(
+    [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        modifiedAt: 300,
+        displayTitle: "Authentication failure",
+        titleSource: "metadata",
+        metadata: {
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Authentication failure",
+          lastMessageDate: 300,
+          lastResponseState: "cancelled",
+        },
+      },
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        modifiedAt: 300,
+        displayTitle: "Second session",
+        titleSource: "id",
+      },
+    ],
+    "en-US",
+    collect,
+    400,
+  );
 
   assert.ok(collected.length > 0);
   for (const message of collected) {

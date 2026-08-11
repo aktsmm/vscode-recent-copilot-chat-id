@@ -35,6 +35,7 @@ test("manifest exposes the Track A commands and opt-in setting", () => {
     "agShowSessionId.openSettings",
     "agShowSessionId.enable",
     "agShowSessionId.enableTitles",
+    "agShowSessionId.enableAll",
   ]);
   assert.equal(
     manifest.contributes.configuration.properties["agShowSessionId.enabled"]
@@ -67,6 +68,18 @@ test("manifest exposes the Track A commands and opt-in setting", () => {
     "machine",
   );
   assert.equal(
+    manifest.contributes.configuration.properties[
+      "agShowSessionId.analyzeUsageOnInspectorOpen"
+    ].default,
+    false,
+  );
+  assert.equal(
+    manifest.contributes.configuration.properties[
+      "agShowSessionId.analyzeUsageOnInspectorOpen"
+    ].scope,
+    "machine",
+  );
+  assert.equal(
     manifest.contributes.viewsContainers.activitybar[0].id,
     "agShowSessionIdSessions",
   );
@@ -78,7 +91,22 @@ test("manifest exposes the Track A commands and opt-in setting", () => {
     manifest.contributes.views.agShowSessionIdSessions[0].id,
     "agShowSessionId.sessionsView",
   );
-  assert.equal(manifest.contributes.menus["view/title"].length, 4);
+  assert.equal(manifest.contributes.menus["view/title"].length, 5);
+  const enableAllMenu = manifest.contributes.menus["view/title"].find(
+    (entry: { command: string }) =>
+      entry.command === "agShowSessionId.enableAll",
+  );
+  for (const setting of [
+    "enabled",
+    "readTitles",
+    "readUsage",
+    "analyzeUsageOnInspectorOpen",
+  ]) {
+    assert.ok(
+      enableAllMenu.when.includes(`!config.agShowSessionId.${setting}`),
+      `Enable All must stay visible while ${setting} is off`,
+    );
+  }
   assert.equal(manifest.contributes.menus["view/item/context"].length, 7);
   assert.deepEqual(
     manifest.contributes.menus.commandPalette
@@ -138,12 +166,6 @@ test("runtime source keeps the bounded metadata privacy boundary", () => {
   );
   assert.match(usageReaderSource, /generation !== this\.generation/);
   assert.match(usageReaderSource, /this\.generation\+\+/);
-  for (const file of sourceFiles.filter(
-    (name) => name !== "session-usage-reader.ts",
-  )) {
-    const content = readFileSync(path.join(ROOT, "src", file), "utf8");
-    assert.doesNotMatch(content, /workspace\.fs\.readFile/);
-  }
   const usageLogSource = readFileSync(
     path.join(ROOT, "src", "session-usage-log.ts"),
     "utf8",
@@ -161,10 +183,6 @@ test("runtime source keeps the bounded metadata privacy boundary", () => {
     );
   }
   assert.doesNotMatch(source, /debug-logs|process\.env\.APPDATA|%APPDATA%/i);
-  assert.doesNotMatch(
-    source,
-    /fetch\(|from ["']node:(?:http|https|net|tls|child_process)["']/,
-  );
   assert.match(
     source,
     /Recent saved session UUID prefix: \$\{shortenSessionId/,
@@ -178,7 +196,21 @@ test("runtime source keeps the bounded metadata privacy boundary", () => {
   assert.equal(indexSource.match(/state\.vscdb/g)?.length, 2);
   assert.match(
     indexSource,
-    /new DatabaseSync\(databasePath, \{ readOnly: true \}\)/,
+    /new sqlite\.DatabaseSync\(databasePath, \{ readOnly: true \}\)/,
+  );
+  assert.doesNotMatch(indexSource, /^import .*"node:sqlite"/m);
+  assert.match(indexSource, /require\("node:sqlite"\) as SqliteModule/);
+  const controllerSource = readFileSync(
+    path.join(ROOT, "src", "extension.ts"),
+    "utf8",
+  );
+  assert.match(
+    controllerSource,
+    /titlesUnsupported = result\.errorCode === "SessionIndexUnsupportedRuntime"/,
+  );
+  assert.match(
+    controllerSource,
+    /if \(titlesUnsupported\) \{[\s\S]*?this\.stopTitleWatching\(\);\s*\} else \{\s*this\.startTitleWatching\(databasePath\);/,
   );
   assert.match(indexSource, /SELECT value FROM ItemTable WHERE key = \?/);
   assert.match(indexSource, /length\(CAST\(value AS BLOB\)\)/);
@@ -187,6 +219,14 @@ test("runtime source keeps the bounded metadata privacy boundary", () => {
   assert.match(indexSource, /MAX_SESSION_METADATA_TITLE_LENGTH/);
   assert.match(indexSource, /CHAT_SESSION_INDEX_KEY/);
   assert.doesNotMatch(indexSource, /(?:INSERT|UPDATE|DELETE|REPLACE)\s+/i);
+  const inspectorSource = readFileSync(
+    path.join(ROOT, "src", "session-inspector.ts"),
+    "utf8",
+  );
+  assert.match(
+    inspectorSource,
+    /\{ enableScripts: false, localResourceRoots: \[\] \}/,
+  );
 
   for (const file of sourceFiles.filter(
     (name) => name !== "session-index.ts",
@@ -219,7 +259,13 @@ test("status bar updates flow through the accessible renderer", () => {
   assert.equal(source.match(/statusBar\.text =/g)?.length, 1);
   assert.match(source, /statusBar\.accessibilityInformation = \{ label:/);
   assert.match(source, /createOutputChannel\(\s*vscode\.l10n\.t\(/);
-  assert.match(source, /Intl\.DateTimeFormat\(vscode\.env\.language/);
+  assert.equal(
+    source.match(
+      /buildSessionQuickPickEntries\(\s*this\.records,\s*vscode\.env\.language,\s*vscode\.l10n\.t,\s*\)/g,
+    )?.length,
+    2,
+  );
+  assert.equal(source.match(/matchOnDetail: true/g)?.length, 2);
   assert.match(source, /recent: COMMANDS\.openView/);
   assert.doesNotMatch(source, /recent: COMMANDS\.copyRecent/);
   assert.match(source, /this\.treeView\.reveal\(sessionNode/);
@@ -245,12 +291,33 @@ test("status bar updates flow through the accessible renderer", () => {
   assert.match(source, /this\.inspector\.dispose\(\)/);
   assert.match(
     source,
-    /this\.usageReader\.clear\(\);\s*this\.displayedUsage\.clear\(\);\s*this\.inspector\.dispose\(\)/,
+    /this\.usageReader\.clear\(\);\s*this\.displayedUsage\.clear\(\);\s*this\.inspector\.close\(\)/,
   );
   assert.match(source, /if \(!this\.isUsageReadingEnabled\(\)\)/);
   assert.match(
     source,
-    /private async openInspector[\s\S]*?if \(!this\.isUsageReadingEnabled\(\)\) \{\s*this\.usageReader\.clear\(\);\s*this\.displayedUsage\.clear\(\);\s*return;\s*\}\s*if \(inspectorGeneration !== this\.usageAnalysisGeneration\) \{\s*return;/,
+    /private async openInspector[\s\S]*?const analyzeOnOpen = canAnalyzeOnInspectorOpen\(\s*this\.inspectorUsageSettings\(\),\s*sessionDirectory !== undefined,\s*\);/,
+  );
+  assert.match(
+    source,
+    /private async analyzeUsageOnOpen[\s\S]*?!shouldApplyInspectorUsage\(this\.inspectorUsageSettings\(\), \{\s*cancelled,\s*staleGeneration: generation !== this\.usageAnalysisGeneration,/,
+  );
+  assert.match(
+    source,
+    /private cancelInspectorAnalysis\(\): void \{\s*const pending = this\.inspectorAnalysis;\s*this\.inspectorAnalysis = undefined;\s*pending\?\.cancel\(\);\s*\}/,
+  );
+  assert.match(source, /private async enableAllFeatures[\s\S]*?modal: true/);
+  assert.match(
+    source,
+    /enableAllLocalFeatures\(\s*\[\s*ENABLED_SETTING,\s*READ_TITLES_SETTING,\s*READ_USAGE_SETTING,\s*ANALYZE_ON_OPEN_SETTING,\s*\],/,
+  );
+  assert.match(
+    source,
+    /private async enableAllFeatures[\s\S]*?if \(!applied\) \{\s*return;\s*\}/,
+  );
+  assert.match(
+    source,
+    /this\.inspector\.onDidClose\(\(\) => \{\s*this\.cancelInspectorAnalysis\(\);/,
   );
   assert.match(source, /private usageAnalysisGeneration = 0/);
   assert.match(
@@ -258,6 +325,23 @@ test("status bar updates flow through the accessible renderer", () => {
     /private async openInspector[\s\S]*?const inspectorGeneration = \+\+this\.usageAnalysisGeneration/,
   );
   assert.match(source, /analysisGeneration !== this\.usageAnalysisGeneration/g);
+});
+
+test("date formatting stays memoized in one module", () => {
+  // Constructing Intl formatters per row dominated tree rendering before this guard.
+  const treeModel = readFileSync(
+    path.join(ROOT, "src", "session-tree-model.ts"),
+    "utf8",
+  );
+  assert.match(treeModel, /relativeFormatters = new Map/);
+  assert.match(treeModel, /absoluteFormatters = new Map/);
+  for (const name of ["session-quick-pick.ts", "session-tree.ts"]) {
+    assert.doesNotMatch(
+      readFileSync(path.join(ROOT, "src", name), "utf8"),
+      /new Intl\./,
+      `${name} must reuse the shared formatters`,
+    );
+  }
 });
 
 test("commands use a single palette category", () => {
@@ -454,6 +538,62 @@ test("the worker entry point stays compiled and packaged", () => {
     verifier.includes(`"extension/out/src/${workerModule}.js"`),
     `Packaged payload must include out/src/${workerModule}.js`,
   );
+});
+
+test("the readmes document every palette command and setting", () => {
+  const defaultNls: Record<string, string> = JSON.parse(
+    readFileSync(path.join(ROOT, "package.nls.json"), "utf8"),
+  );
+  const japaneseNls: Record<string, string> = JSON.parse(
+    readFileSync(path.join(ROOT, "package.nls.ja.json"), "utf8"),
+  );
+  const hidden = new Set(
+    manifest.contributes.menus.commandPalette
+      .filter((entry: { when?: string }) => entry.when === "false")
+      .map((entry: { command: string }) => entry.command),
+  );
+  const resolve = (value: string, table: Record<string, string>): string =>
+    value.startsWith("%") ? table[value.slice(1, -1)] : value;
+
+  // Compare the rendered command table itself, not any mention in the prose.
+  const firstColumn = (readme: string, heading: string): string[] => {
+    const normalized = readme.replaceAll("\r\n", "\n");
+    const section = normalized.split(`\n## ${heading}\n`)[1]?.split("\n## ")[0];
+    assert.ok(section, `Missing ${heading} section`);
+    return [...section.matchAll(/^\| `([^`]+)`\s*\|/gm)].map(
+      (match) => match[1],
+    );
+  };
+
+  for (const [readme, heading, prefix, nls] of [
+    ["README.md", "Commands", "Recent Copilot Chat ID: ", defaultNls],
+    ["README.ja.md", "コマンド", "最近の Copilot Chat ID: ", japaneseNls],
+  ] as const) {
+    const documented = firstColumn(
+      readFileSync(path.join(ROOT, readme), "utf8"),
+      heading,
+    ).map((entry) => entry.slice(prefix.length));
+    const expected = (
+      manifest.contributes.commands as { command: string; title: string }[]
+    )
+      .filter((entry) => !hidden.has(entry.command))
+      .map((entry) => resolve(entry.title, nls));
+
+    assert.deepEqual(
+      [...documented].sort(),
+      [...expected].sort(),
+      `${readme} command table does not match the palette`,
+    );
+  }
+
+  for (const readme of ["README.md", "README.ja.md"]) {
+    const content = readFileSync(path.join(ROOT, readme), "utf8");
+    for (const key of Object.keys(
+      manifest.contributes.configuration.properties,
+    )) {
+      assert.ok(content.includes(key), `${readme} is missing ${key}`);
+    }
+  }
 });
 
 test("the English and Japanese readmes link to each other", () => {

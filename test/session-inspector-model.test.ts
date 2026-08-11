@@ -58,7 +58,10 @@ test("buildSessionInspectorModel presents bounded index metadata", () => {
       ["Changed files", "2"],
       ["Lines added", "30"],
       ["Lines removed", "4"],
-      ["Usage analysis", "Not analyzed"],
+      [
+        "Usage analysis",
+        "Not analyzed\nRun Analyze AI Credits on this session row to read usage.",
+      ],
     ],
   );
 });
@@ -76,8 +79,65 @@ test("buildSessionInspectorModel marks unavailable optional metadata", () => {
   );
   assert.equal(
     model.fields.filter((field) => field.value === "Not available").length,
-    7,
+    4,
   );
+  assert.deepEqual(
+    model.fields
+      .filter((field) => field.group === "Edits")
+      .map((field) => [field.label, field.value]),
+    [
+      [
+        "Changed files and lines",
+        "Not recorded by VS Code for this saved session",
+      ],
+    ],
+  );
+});
+
+test("buildSessionInspectorModel groups fields for the inspector layout", () => {
+  const model = buildSessionInspectorModel(
+    {
+      id: SESSION_ID,
+      modifiedAt: Date.UTC(2026, 7, 6, 10, 5),
+      displayTitle: "Session 11111111",
+      titleSource: "id",
+      metadata: {
+        id: SESSION_ID,
+        title: "Session 11111111",
+        lastMessageDate: Date.UTC(2026, 7, 6, 10, 4),
+        stats: { fileCount: 2, added: 30, removed: 4 },
+      },
+    },
+    "en-US",
+    translate,
+  );
+  assert.deepEqual(
+    [...new Set(model.fields.map((field) => field.group))],
+    ["Session", "Timing", "Edits", "Usage"],
+  );
+});
+
+test("buildSessionInspectorModel reports an in-progress analysis", () => {
+  const model = buildSessionInspectorModel(
+    {
+      id: SESSION_ID,
+      modifiedAt: Date.UTC(2026, 7, 6, 10, 5),
+      displayTitle: "Session 11111111",
+      titleSource: "id",
+    },
+    "en-US",
+    translate,
+    { kind: "analyzing" },
+  );
+  assert.equal(
+    model.fields.find((field) => field.label === "Usage analysis")?.value,
+    "Analyzing",
+  );
+  assert.equal(
+    model.fields.filter((field) => field.label === "AI Credits").length,
+    0,
+  );
+  assert.match(model.note, /selected local session file/);
 });
 
 test("buildSessionInspectorModel presents reported AI Credits and token totals", () => {

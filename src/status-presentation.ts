@@ -3,7 +3,12 @@ import {
   SavedSession,
   shortenSessionId,
 } from "./session-scanner";
-import { SessionRecord, truncateStatusTitle } from "./session-model";
+import {
+  escapeMarkdown,
+  SessionRecord,
+  stripStatusIcons,
+  truncateStatusTitle,
+} from "./session-model";
 
 export type RecentChatStatusKind =
   | "recent"
@@ -120,14 +125,14 @@ export function describeRecordStatus(
   const shortTitle = truncateStatusTitle(recent.displayTitle);
   return {
     kind: "recent",
-    text: `${RECENT_ICON} ${t("Recent: {0}", shortTitle)}`,
+    text: `${RECENT_ICON} ${t("Recent: {0}", stripStatusIcons(shortTitle))}`,
     ariaLabel: t(
       "Most recently saved Copilot Chat session {0}. Activate to show it in the session list.",
       recent.displayTitle,
     ),
     tooltip: t(
       "{0}\n\nSession ID: `{1}`\n\nThis is not guaranteed to be the active chat session.\n\n{2}\n\nSelect to show it in the session list.",
-      recent.displayTitle,
+      escapeMarkdown(recent.displayTitle),
       recent.id,
       describeCount(records.length, t),
     ),

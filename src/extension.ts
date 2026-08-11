@@ -6,8 +6,18 @@ import {
   copySessionWithTitleWithRecovery,
 } from "./copy-session";
 import { SessionAliasStore } from "./session-alias-store";
+import { enableAllLocalFeatures } from "./enable-all-features";
+import {
+  canAnalyzeOnInspectorOpen,
+  InspectorUsageSettings,
+  shouldApplyInspectorUsage,
+} from "./inspector-usage-gate";
 import { SessionInspector } from "./session-inspector";
-import { SessionUsageReader } from "./session-usage-reader";
+import { buildSessionQuickPickEntries } from "./session-quick-pick";
+import {
+  SessionUsageReader,
+  SessionUsageReadResult,
+} from "./session-usage-reader";
 import {
   describeSessionUsageError,
   SessionInspectorUsage,
@@ -24,6 +34,7 @@ import {
   normalizeSessionAlias,
   selectSessionRecord,
   SessionRecord,
+  stripStatusIcons,
 } from "./session-model";
 import {
   buildSavedSessions,
@@ -51,6 +62,7 @@ const CONFIG_SECTION = "agShowSessionId";
 const ENABLED_SETTING = "enabled";
 const READ_TITLES_SETTING = "readTitles";
 const READ_USAGE_SETTING = "readUsage";
+const ANALYZE_ON_OPEN_SETTING = "analyzeUsageOnInspectorOpen";
 const INTRO_SHOWN_KEY = "agShowSessionId.introShown";
 const VIEW_ID = "agShowSessionId.sessionsView";
 const COMMANDS = {
@@ -69,6 +81,7 @@ const COMMANDS = {
   openSettings: "agShowSessionId.openSettings",
   enable: "agShowSessionId.enable",
   enableTitles: "agShowSessionId.enableTitles",
+  enableAll: "agShowSessionId.enableAll",
 } as const;
 const STATUS_COMMANDS: Record<RecentChatStatusKind, string> = {
   recent: COMMANDS.openView,
@@ -112,6 +125,8 @@ class RecentChatController implements vscode.Disposable {
   private scanAvailable = true;
   private scanGeneration = 0;
   private usageAnalysisGeneration = 0;
+  private inspectorAnalysis: vscode.CancellationTokenSource | undefined;
+  private enablingAll = false;
   private disposed = false;
   private lastStatusKey: string | undefined;
   private watcher: vscode.FileSystemWatcher | undefined;
@@ -197,7 +212,13 @@ class RecentChatController implements vscode.Disposable {
       vscode.commands.registerCommand(COMMANDS.enableTitles, async () => {
         await this.promptToEnableTitles();
       }),
+      vscode.commands.registerCommand(COMMANDS.enableAll, async () => {
+        await this.enableAllFeatures();
+      }),
       vscode.workspace.onDidChangeConfiguration((event) => {
+        if (this.enablingAll) {
+          return;
+        }
         if (
           event.affectsConfiguration(`${CONFIG_SECTION}.${ENABLED_SETTING}`) ||
           event.affectsConfiguration(`${CONFIG_SECTION}.${READ_TITLES_SETTING}`)
@@ -211,10 +232,27 @@ class RecentChatController implements vscode.Disposable {
           !this.isUsageReadingEnabled()
         ) {
           this.usageAnalysisGeneration++;
+          this.cancelInspectorAnalysis();
           this.usageReader.clear();
           this.displayedUsage.clear();
-          this.inspector.dispose();
+          this.inspector.close();
         }
+        if (
+          event.affectsConfiguration(
+            `${CONFIG_SECTION}.${ANALYZE_ON_OPEN_SETTING}`,
+          ) &&
+          !this.isInspectorAnalysisEnabled()
+        ) {
+          this.usageAnalysisGeneration++;
+          this.cancelInspectorAnalysis();
+          const shownId = this.inspector.shownSessionId;
+          if (shownId) {
+            this.inspector.update(shownId, this.displayedUsage.get(shownId));
+          }
+        }
+      }),
+      this.inspector.onDidClose(() => {
+        this.cancelInspectorAnalysis();
       }),
       this.treeView.onDidChangeVisibility((event) => {
         this.relativeTimeScheduler.setVisible(event.visible);
@@ -319,6 +357,8 @@ class RecentChatController implements vscode.Disposable {
   dispose(): void {
     this.disposed = true;
     this.scanGeneration++;
+    this.usageAnalysisGeneration++;
+    this.cancelInspectorAnalysis();
     this.stopWatching();
     this.stopTitleWatching();
     this.relativeTimeScheduler.dispose();
@@ -364,19 +404,46 @@ class RecentChatController implements vscode.Disposable {
       .get<boolean>(READ_USAGE_SETTING, false);
   }
 
+  private isInspectorAnalysisEnabled(): boolean {
+    return vscode.workspace
+      .getConfiguration(CONFIG_SECTION)
+      .get<boolean>(ANALYZE_ON_OPEN_SETTING, false);
+  }
+
+  private inspectorUsageSettings(): InspectorUsageSettings {
+    return {
+      usageReadingEnabled: this.isUsageReadingEnabled(),
+      analyzeOnOpenEnabled: this.isInspectorAnalysisEnabled(),
+    };
+  }
+
+  /** Stops an Inspector-initiated read without clearing the shared usage cache. */
+  private cancelInspectorAnalysis(): void {
+    const pending = this.inspectorAnalysis;
+    this.inspectorAnalysis = undefined;
+    pending?.cancel();
+  }
+
   private async rebuildRecords(): Promise<void> {
     let index: ReadonlyMap<string, SessionIndexMetadata> = new Map();
+    let titlesUnsupported = false;
     if (this.isEnabled() && this.isTitleReadingEnabled()) {
       const databasePath = resolveSessionIndexPath(
         this.context.storageUri?.fsPath,
         this.context.globalStorageUri.fsPath,
       );
-      this.startTitleWatching(databasePath);
       const result = readSessionIndex(
         databasePath,
         new Set(this.sessions.map((session) => session.id)),
       );
       index = result.entries;
+      titlesUnsupported = result.errorCode === "SessionIndexUnsupportedRuntime";
+      if (titlesUnsupported) {
+        // The runtime cannot change mid-session, so stop watching instead of re-reporting.
+        this.stopTitleWatching();
+      } else {
+        this.startTitleWatching(databasePath);
+      }
       if (result.errorCode && result.errorCode !== "IndexNotFound") {
         this.output.warn(
           `Session title metadata unavailable: ${result.errorCode}.`,
@@ -390,16 +457,10 @@ class RecentChatController implements vscode.Disposable {
       this.sessions,
       index,
       await this.getAliases(),
+      vscode.l10n.t,
     );
     this.treeProvider.setRecords(this.records);
-    this.treeView.message =
-      this.isEnabled() &&
-      !this.isTitleReadingEnabled() &&
-      this.records.length > 0
-        ? vscode.l10n.t(
-            "Session titles are off. Use the eye button to enable title metadata, or set local titles from the context menu.",
-          )
-        : undefined;
+    this.treeView.message = this.resolveTreeMessage(titlesUnsupported);
     await Promise.all(
       [
         ["agShowSessionId.hasSessions", this.records.length > 0],
@@ -408,6 +469,22 @@ class RecentChatController implements vscode.Disposable {
         vscode.commands.executeCommand("setContext", key, value),
       ),
     );
+  }
+
+  private resolveTreeMessage(titlesUnsupported: boolean): string | undefined {
+    if (!this.isEnabled() || this.records.length === 0) {
+      return undefined;
+    }
+    if (titlesUnsupported) {
+      return vscode.l10n.t(
+        "Session titles are unavailable in this VS Code runtime. Filename scanning still works, and local titles can be set from the context menu.",
+      );
+    }
+    return this.isTitleReadingEnabled()
+      ? undefined
+      : vscode.l10n.t(
+          "Session titles are off. Use the eye button to enable title metadata, or set local titles from the context menu.",
+        );
   }
 
   private async getAliases(): Promise<Readonly<Record<string, string>>> {
@@ -548,27 +625,12 @@ class RecentChatController implements vscode.Disposable {
       return;
     }
 
-    const latestSavedAt = this.records[0].modifiedAt;
-    const ambiguous = isMostRecentAmbiguous(this.records);
     const selected = await vscode.window.showQuickPick(
-      this.records.map((session) => ({
-        label: session.displayTitle,
-        description:
-          session.modifiedAt === latestSavedAt
-            ? ambiguous
-              ? `${shortenSessionId(session.id)} · ${vscode.l10n.t("tied for most recent")}`
-              : `${shortenSessionId(session.id)} · ${vscode.l10n.t("most recently saved")}`
-            : shortenSessionId(session.id),
-        detail: vscode.l10n.t(
-          "Session ID: {0} · Last saved {1}",
-          session.id,
-          new Intl.DateTimeFormat(vscode.env.language, {
-            dateStyle: "medium",
-            timeStyle: "short",
-          }).format(session.modifiedAt),
-        ),
-        session,
-      })),
+      buildSessionQuickPickEntries(
+        this.records,
+        vscode.env.language,
+        vscode.l10n.t,
+      ),
       {
         title: vscode.l10n.t("Saved Copilot Chat session IDs"),
         placeHolder:
@@ -579,7 +641,7 @@ class RecentChatController implements vscode.Disposable {
     );
 
     if (selected) {
-      await this.copySessionId(selected.session.id);
+      await this.copySessionId(selected.record.id);
     }
   }
 
@@ -635,6 +697,7 @@ class RecentChatController implements vscode.Disposable {
       return;
     }
     const inspectorGeneration = ++this.usageAnalysisGeneration;
+    this.cancelInspectorAnalysis();
     await this.refresh(false);
     if (inspectorGeneration !== this.usageAnalysisGeneration) {
       return;
@@ -649,36 +712,76 @@ class RecentChatController implements vscode.Disposable {
       );
       return;
     }
-    if (record) {
-      let usage = this.displayedUsage.get(record.id);
-      const sessionDirectory = this.resolveSessionDirectory();
-      if (usage && this.isUsageReadingEnabled() && sessionDirectory) {
-        const tokenSource = new vscode.CancellationTokenSource();
-        const refreshed = await this.usageReader
-          .read(sessionDirectory, record.id, tokenSource.token)
-          .finally(() => tokenSource.dispose());
-        if (!this.isUsageReadingEnabled()) {
-          this.usageReader.clear();
-          this.displayedUsage.clear();
-          return;
-        }
-        if (inspectorGeneration !== this.usageAnalysisGeneration) {
-          return;
-        }
-        usage =
-          refreshed.kind === "ok"
-            ? {
-                kind: "ok",
-                summary: refreshed.summary,
-                sourceModifiedAt: refreshed.sourceModifiedAt,
-              }
-            : { kind: "error", errorCode: refreshed.errorCode };
-        this.displayedUsage.set(record.id, usage);
-      }
-      if (inspectorGeneration === this.usageAnalysisGeneration) {
-        this.inspector.show(record, usage);
-      }
+    if (!record || inspectorGeneration !== this.usageAnalysisGeneration) {
+      return;
     }
+    if (!this.isUsageReadingEnabled()) {
+      this.usageReader.clear();
+      this.displayedUsage.clear();
+    }
+    const cached = this.displayedUsage.get(record.id);
+    const sessionDirectory = this.resolveSessionDirectory();
+    const analyzeOnOpen = canAnalyzeOnInspectorOpen(
+      this.inspectorUsageSettings(),
+      sessionDirectory !== undefined,
+    );
+    this.inspector.show(record, analyzeOnOpen ? { kind: "analyzing" } : cached);
+    if (analyzeOnOpen && sessionDirectory) {
+      await this.analyzeUsageOnOpen(
+        record,
+        sessionDirectory,
+        inspectorGeneration,
+      );
+    }
+  }
+
+  /** Reads usage for an already-visible Inspector; only the opt-in setting starts this. */
+  private async analyzeUsageOnOpen(
+    record: SessionRecord,
+    sessionDirectory: vscode.Uri,
+    generation: number,
+  ): Promise<void> {
+    const tokenSource = new vscode.CancellationTokenSource();
+    this.inspectorAnalysis = tokenSource;
+    let cancelled = false;
+    let result: SessionUsageReadResult;
+    try {
+      result = await this.usageReader.read(
+        sessionDirectory,
+        record.id,
+        tokenSource.token,
+      );
+    } finally {
+      cancelled = tokenSource.token.isCancellationRequested;
+      if (this.inspectorAnalysis === tokenSource) {
+        this.inspectorAnalysis = undefined;
+      }
+      tokenSource.dispose();
+    }
+    if (
+      !shouldApplyInspectorUsage(this.inspectorUsageSettings(), {
+        cancelled,
+        staleGeneration: generation !== this.usageAnalysisGeneration,
+        errorCode: result.kind === "error" ? result.errorCode : undefined,
+      })
+    ) {
+      return;
+    }
+    if (result.kind === "error") {
+      this.output.warn(
+        `Session usage unavailable for ${shortenSessionId(record.id)}: ${result.errorCode}.`,
+      );
+    }
+    const usage: SessionInspectorUsage =
+      result.kind === "ok"
+        ? {
+            kind: "ok",
+            summary: result.summary,
+            sourceModifiedAt: result.sourceModifiedAt,
+          }
+        : { kind: "error", errorCode: result.errorCode };
+    this.displayedUsage.set(record.id, usage);
+    this.inspector.update(record.id, usage);
   }
 
   private async analyzeUsage(node?: SessionTreeNode): Promise<void> {
@@ -686,6 +789,7 @@ class RecentChatController implements vscode.Disposable {
       return;
     }
     const analysisGeneration = ++this.usageAnalysisGeneration;
+    this.cancelInspectorAnalysis();
     await this.refresh(false);
     if (
       !this.isUsageReadingEnabled() ||
@@ -713,7 +817,7 @@ class RecentChatController implements vscode.Disposable {
         location: vscode.ProgressLocation.Notification,
         title: vscode.l10n.t(
           "Analyzing AI Credits for {0}",
-          record.displayTitle,
+          stripStatusIcons(record.displayTitle),
         ),
         cancellable: true,
       },
@@ -779,11 +883,13 @@ class RecentChatController implements vscode.Disposable {
 
     const value = await vscode.window.showInputBox({
       title: vscode.l10n.t("Set local title"),
-      prompt: vscode.l10n.t(
-        this.context.storageUri
-          ? "Stored in local state for this workspace. Leave empty to remove the local title."
-          : "Stored in local state for this empty-window profile. Leave empty to remove the local title.",
-      ),
+      prompt: this.context.storageUri
+        ? vscode.l10n.t(
+            "Stored in this VS Code profile and shared with the empty-window view. Leave empty to remove the local title.",
+          )
+        : vscode.l10n.t(
+            "Stored in this VS Code profile and shared with workspace windows. Leave empty to remove the local title.",
+          ),
       value: record.alias ?? "",
       placeHolder: record.displayTitle,
       validateInput: (input) =>
@@ -824,15 +930,16 @@ class RecentChatController implements vscode.Disposable {
       return undefined;
     }
     const selected = await vscode.window.showQuickPick(
-      this.records.map((record) => ({
-        label: record.displayTitle,
-        description: shortenSessionId(record.id),
-        record,
-      })),
+      buildSessionQuickPickEntries(
+        this.records,
+        vscode.env.language,
+        vscode.l10n.t,
+      ),
       {
         title: vscode.l10n.t("Saved Copilot Chat sessions"),
         placeHolder: vscode.l10n.t("Select a session"),
         matchOnDescription: true,
+        matchOnDetail: true,
       },
     );
     return selected?.record;
@@ -850,8 +957,11 @@ class RecentChatController implements vscode.Disposable {
     await copySessionIdWithRecovery(
       id,
       this.createCopyPort(
-        "Copied Copilot Chat session ID {0}.",
-        "Could not copy the Copilot Chat session ID. Open the log for details.",
+        (shortId) =>
+          vscode.l10n.t("Copied Copilot Chat session ID {0}.", shortId),
+        vscode.l10n.t(
+          "Could not copy the Copilot Chat session ID. Open the log for details.",
+        ),
       ),
     );
   }
@@ -861,29 +971,32 @@ class RecentChatController implements vscode.Disposable {
       record.id,
       record.displayTitle,
       this.createCopyPort(
-        "Copied title and Copilot Chat session ID {0}.",
-        "Could not copy the title and Copilot Chat session ID. Open the log for details.",
+        (shortId) =>
+          vscode.l10n.t(
+            "Copied title and Copilot Chat session ID {0}.",
+            shortId,
+          ),
+        vscode.l10n.t(
+          "Could not copy the title and Copilot Chat session ID. Open the log for details.",
+        ),
       ),
     );
   }
 
   private createCopyPort(
-    successMessage: string,
+    formatSuccess: (shortId: string) => string,
     failureMessage: string,
   ): CopySessionPort {
     const openLog = vscode.l10n.t("Open Log");
     return {
       writeText: (value) => vscode.env.clipboard.writeText(value),
       showSuccess: (shortId) => {
-        void vscode.window.setStatusBarMessage(
-          vscode.l10n.t(successMessage, shortId),
-          3000,
-        );
+        void vscode.window.setStatusBarMessage(formatSuccess(shortId), 3000);
       },
       showFailure: async (error) => {
         this.output.warn(`Clipboard write failed: ${toSafeErrorCode(error)}.`);
         const action = await vscode.window.showErrorMessage(
-          vscode.l10n.t(failureMessage),
+          failureMessage,
           openLog,
         );
         return action === openLog;
@@ -940,6 +1053,52 @@ class RecentChatController implements vscode.Disposable {
     }
 
     return false;
+  }
+
+  /** One explicit consent for every machine-local read this extension can perform. */
+  private async enableAllFeatures(): Promise<void> {
+    this.enablingAll = true;
+    let applied = false;
+    try {
+      applied = await enableAllLocalFeatures(
+        [
+          ENABLED_SETTING,
+          READ_TITLES_SETTING,
+          READ_USAGE_SETTING,
+          ANALYZE_ON_OPEN_SETTING,
+        ],
+        {
+          confirm: async () => {
+            const enableAll = vscode.l10n.t("Enable all");
+            const action = await vscode.window.showInformationMessage(
+              vscode.l10n.t(
+                "Turn on every local feature of Recent Copilot Chat ID?",
+              ),
+              {
+                modal: true,
+                detail: vscode.l10n.t(
+                  "Filename scanning reads session filenames and modification times. Session titles read one entry from VS Code's local chat index. AI Credits analysis reads the selected session file, which contains chat content, and keeps only the usage summary in memory. Inspector analysis starts that analysis when the Session Inspector opens. No data is sent over the network, and every setting stays machine-local.",
+                ),
+              },
+              enableAll,
+            );
+            return action === enableAll;
+          },
+          enable: async (setting) => {
+            await vscode.workspace
+              .getConfiguration(CONFIG_SECTION)
+              .update(setting, true, vscode.ConfigurationTarget.Global);
+          },
+        },
+      );
+    } finally {
+      this.enablingAll = false;
+    }
+    if (!applied) {
+      return;
+    }
+    await this.context.globalState.update(INTRO_SHOWN_KEY, true);
+    await this.refresh(false);
   }
 
   private async promptToEnableTitles(): Promise<boolean> {
@@ -1015,20 +1174,33 @@ class RecentChatController implements vscode.Disposable {
     this.watcher.onDidChange((uri) =>
       this.runSafely(() => this.applyChangedFile(uri)),
     );
-    this.watcher.onDidDelete(() => this.scheduleRefresh());
+    this.watcher.onDidDelete((uri) => {
+      this.invalidateUsage(parseSessionId(uri.path.split("/").pop() ?? ""));
+      this.scheduleRefresh();
+    });
+  }
+
+  /** A newer save or a delete invalidates the summary the Inspector would otherwise reuse. */
+  private invalidateUsage(id: string | undefined): void {
+    if (!id || !this.displayedUsage.delete(id)) {
+      return;
+    }
+    this.cancelInspectorAnalysis();
+    this.usageAnalysisGeneration++;
+    if (this.inspector.shownSessionId === id) {
+      this.inspector.update(id, undefined);
+    }
   }
 
   /** Session writes are frequent, so a single change updates one entry instead of re-scanning the folder. */
   private async applyChangedFile(uri: vscode.Uri): Promise<void> {
     const generation = ++this.scanGeneration;
     const name = uri.path.split("/").pop() ?? "";
-    if (
-      !this.isEnabled() ||
-      !parseSessionId(name) ||
-      this.isStale(generation)
-    ) {
+    const changedId = parseSessionId(name);
+    if (!this.isEnabled() || !changedId || this.isStale(generation)) {
       return;
     }
+    this.invalidateUsage(changedId);
 
     try {
       const stat = await vscode.workspace.fs.stat(uri);

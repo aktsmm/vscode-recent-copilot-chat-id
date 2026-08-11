@@ -1,8 +1,8 @@
 {
   "name": "ag-show-session-id",
   "displayName": "Recent Copilot Chat ID",
-  "description": "Browses recently saved local Copilot Chat sessions and optionally analyzes backend-reported AI Credits on demand.",
-  "version": "0.2.2",
+  "description": "Browses recently saved local Copilot Chat sessions and optionally analyzes backend-reported AI Credits from an explicit, opt-in action.",
+  "version": "0.3.0",
   "preview": true,
   "publisher": "yamapan",
   "license": "CC-BY-NC-SA-4.0",
@@ -130,6 +130,12 @@
         "category": "%command.category%",
         "title": "%command.enableTitles.title%",
         "icon": "$(eye)"
+      },
+      {
+        "command": "agShowSessionId.enableAll",
+        "category": "%command.category%",
+        "title": "%command.enableAll.title%",
+        "icon": "$(check-all)"
       }
     ],
     "viewsContainers": {
@@ -185,9 +191,14 @@
           "group": "navigation@3"
         },
         {
+          "command": "agShowSessionId.enableAll",
+          "when": "view == agShowSessionId.sessionsView && (!config.agShowSessionId.enabled || !config.agShowSessionId.readTitles || !config.agShowSessionId.readUsage || !config.agShowSessionId.analyzeUsageOnInspectorOpen)",
+          "group": "navigation@4"
+        },
+        {
           "command": "agShowSessionId.openSettings",
           "when": "view == agShowSessionId.sessionsView",
-          "group": "navigation@4"
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
@@ -270,6 +281,12 @@
           "default": false,
           "scope": "machine",
           "description": "%configuration.readUsage.description%"
+        },
+        "agShowSessionId.analyzeUsageOnInspectorOpen": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "description": "%configuration.analyzeUsageOnInspectorOpen.description%"
         }
       }
     }
@@ -282,7 +299,7 @@
     "watch": "tsc --watch -p ./",
     "test": "npm run test:unit && npm run test:extension",
     "pretest:unit": "npm run compile",
-    "test:unit": "node --test test/version-guard.test.mjs out/test/session-scanner.test.js out/test/session-index.test.js out/test/session-model.test.js out/test/session-alias-store.test.js out/test/session-tree-model.test.js out/test/session-inspector-model.test.js out/test/session-inspector.test.js out/test/session-usage-log.test.js out/test/visible-refresh.test.js out/test/status-presentation.test.js out/test/copy-session.test.js out/test/localization.test.js out/test/manifest.test.js",
+    "test:unit": "node --test test/version-guard.test.mjs out/test/session-scanner.test.js out/test/session-index.test.js out/test/session-model.test.js out/test/session-alias-store.test.js out/test/session-tree-model.test.js out/test/session-quick-pick.test.js out/test/session-inspector-model.test.js out/test/session-inspector.test.js out/test/inspector-usage-gate.test.js out/test/enable-all-features.test.js out/test/session-usage-log.test.js out/test/visible-refresh.test.js out/test/status-presentation.test.js out/test/copy-session.test.js out/test/source-policy.test.js out/test/localization.test.js out/test/manifest.test.js",
     "pretest:extension": "npm run compile",
     "test:extension": "node out/test/run-test.js",
     "prepackage": "npm run icon",

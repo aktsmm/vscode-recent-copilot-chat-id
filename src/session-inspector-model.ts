@@ -1,11 +1,11 @@
 import { SessionRecord, SessionTitleSource } from "./session-model";
-import { SessionResponseState } from "./session-index";
-import { formatAbsoluteTime } from "./session-tree-model";
+import { formatAbsoluteTime, responseStateLabel } from "./session-tree-model";
 import { Translate } from "./status-presentation";
 import { SessionUsageSummary } from "./session-usage-log";
 import { SessionUsageErrorCode } from "./session-usage-error";
 
 export interface SessionInspectorField {
+  readonly group: string;
   readonly label: string;
   readonly value: string;
 }
@@ -18,6 +18,7 @@ export interface SessionInspectorModel {
 }
 
 export type SessionInspectorUsage =
+  | { readonly kind: "analyzing" }
   | {
       readonly kind: "ok";
       readonly summary: SessionUsageSummary;
@@ -34,17 +35,24 @@ export function buildSessionInspectorModel(
   const timing = record.metadata?.timing;
   const stats = record.metadata?.stats;
   const unavailable = t("Not available");
+  const session = t("Session");
+  const timingGroup = t("Timing");
+  const edits = t("Edits");
+  const usageGroup = t("Usage");
   const fields: SessionInspectorField[] = [
-    { label: t("Session ID"), value: record.id },
+    { group: session, label: t("Session ID"), value: record.id },
     {
+      group: session,
       label: t("Title source"),
       value: titleSourceLabel(record.titleSource, t),
     },
     {
+      group: timingGroup,
       label: t("Created"),
       value: formatOptionalTime(timing?.created, locale, unavailable),
     },
     {
+      group: timingGroup,
       label: t("Last request started"),
       value: formatOptionalTime(
         timing?.lastRequestStarted,
@@ -53,43 +61,66 @@ export function buildSessionInspectorModel(
       ),
     },
     {
+      group: timingGroup,
       label: t("Last request ended"),
       value: formatOptionalTime(timing?.lastRequestEnded, locale, unavailable),
     },
     {
+      group: timingGroup,
       label: t("Last saved"),
       value: formatAbsoluteTime(record.modifiedAt, locale),
     },
     {
+      group: timingGroup,
       label: t("Response state"),
       value:
         responseStateLabel(record.metadata?.lastResponseState, t) ??
         unavailable,
     },
-    {
-      label: t("Changed files"),
-      value: stats ? String(stats.fileCount) : unavailable,
-    },
-    {
-      label: t("Lines added"),
-      value: stats ? String(stats.added) : unavailable,
-    },
-    {
-      label: t("Lines removed"),
-      value: stats ? String(stats.removed) : unavailable,
-    },
   ];
 
+  if (stats) {
+    fields.push(
+      {
+        group: edits,
+        label: t("Changed files"),
+        value: String(stats.fileCount),
+      },
+      { group: edits, label: t("Lines added"), value: String(stats.added) },
+      { group: edits, label: t("Lines removed"), value: String(stats.removed) },
+    );
+  } else {
+    // VS Code stores index stats only for sessions saved with a live editing diff.
+    fields.push({
+      group: edits,
+      label: t("Changed files and lines"),
+      value: t("Not recorded by VS Code for this saved session"),
+    });
+  }
+
   if (!usage) {
-    fields.push({ label: t("Usage analysis"), value: t("Not analyzed") });
+    fields.push({
+      group: usageGroup,
+      label: t("Usage analysis"),
+      value: `${t("Not analyzed")}\n${t(
+        "Run Analyze AI Credits on this session row to read usage.",
+      )}`,
+    });
+  } else if (usage.kind === "analyzing") {
+    fields.push({
+      group: usageGroup,
+      label: t("Usage analysis"),
+      value: t("Analyzing"),
+    });
   } else if (usage.kind === "error") {
     fields.push(
       {
+        group: usageGroup,
         label: t("Usage analysis"),
         value: describeSessionUsageError(usage.errorCode, t),
       },
-      { label: t("AI Credits"), value: unavailable },
-      { label: t("Token usage"), value: unavailable },
+      { group: usageGroup, label: t("AI Credits"), value: unavailable },
+      { group: usageGroup, label: t("Token usage"), value: unavailable },
     );
   } else if (usage?.kind === "ok") {
     const numberFormatter = new Intl.NumberFormat(locale);
@@ -112,8 +143,9 @@ export function buildSessionInspectorModel(
       );
     }
     fields.push(
-      { label: t("Usage analysis"), value: t("Complete") },
+      { group: usageGroup, label: t("Usage analysis"), value: t("Complete") },
       {
+        group: usageGroup,
         label: t("AI Credits"),
         value:
           usage.summary.aiCredits === undefined
@@ -123,15 +155,18 @@ export function buildSessionInspectorModel(
               }).format(usage.summary.aiCredits),
       },
       {
+        group: usageGroup,
         label: t("Requests analyzed"),
         value: numberFormatter.format(usage.summary.requestCount),
       },
       {
+        group: usageGroup,
         label: t("Token usage"),
         value:
           tokenUsage.length === 0 ? t("Not reported") : tokenUsage.join("\n"),
       },
       {
+        group: usageGroup,
         label: t("Usage source modified"),
         value: formatAbsoluteTime(usage.sourceModifiedAt, locale),
       },
@@ -221,25 +256,5 @@ function titleSourceLabel(source: SessionTitleSource, t: Translate): string {
       return t("VS Code metadata");
     case "id":
       return t("Session ID");
-  }
-}
-
-function responseStateLabel(
-  state: SessionResponseState | undefined,
-  t: Translate,
-): string | undefined {
-  switch (state) {
-    case "pending":
-      return t("Pending");
-    case "complete":
-      return t("Complete");
-    case "cancelled":
-      return t("Cancelled");
-    case "failed":
-      return t("Failed");
-    case "needsInput":
-      return t("Needs input");
-    case undefined:
-      return undefined;
   }
 }

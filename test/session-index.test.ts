@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import {
   CHAT_SESSION_INDEX_KEY,
+  loadSqliteModule,
   MAX_SESSION_INDEX_BYTES,
   MAX_SESSION_INDEX_ENTRIES,
   MAX_SESSION_METADATA_TITLE_LENGTH,
@@ -15,6 +16,20 @@ import {
 } from "../src/session-index";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
+
+test("readSessionIndex degrades when the sqlite builtin is unavailable", () => {
+  const result = readSessionIndex(
+    path.join(os.tmpdir(), "missing-state.vscdb"),
+    undefined,
+    () => undefined,
+  );
+  assert.equal(result.errorCode, "SessionIndexUnsupportedRuntime");
+  assert.equal(result.entries.size, 0);
+});
+
+test("loadSqliteModule resolves the builtin on a supported runtime", () => {
+  assert.equal(typeof loadSqliteModule()?.DatabaseSync, "function");
+});
 
 function withDatabase(
   value: string | undefined,
@@ -102,6 +117,38 @@ test("parseSessionIndex retains validated timing, stats, and response state", ()
     stats: { fileCount: 2, added: 30, removed: 4 },
     lastResponseState: "complete",
   });
+});
+
+test("parseSessionIndex restores every persisted response state value", () => {
+  // Older VS Code builds persisted pending and needsInput before the write path coerced them.
+  const states = [
+    "pending",
+    "complete",
+    "cancelled",
+    "failed",
+    "needsInput",
+  ] as const;
+
+  for (const [value, expected] of states.entries()) {
+    const entries = parseSessionIndex(
+      JSON.stringify({
+        version: 1,
+        entries: {
+          [SESSION_ID]: {
+            sessionId: SESSION_ID,
+            title: "Authentication failure",
+            lastMessageDate: 1234,
+            lastResponseState: value,
+          },
+        },
+      }),
+    );
+    assert.equal(
+      entries.get(SESSION_ID)?.lastResponseState,
+      expected,
+      `lastResponseState ${value}`,
+    );
+  }
 });
 
 test("parseSessionIndex rejects malformed optional metadata", () => {

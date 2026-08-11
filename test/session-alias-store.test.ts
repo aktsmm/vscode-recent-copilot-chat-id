@@ -6,8 +6,12 @@ const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 
 class MemoryState implements AliasState {
   readonly values = new Map<string, unknown>();
+  legacyReads = 0;
 
   get<T>(key: string, defaultValue: T): T {
+    if (key === "agShowSessionId.sessionAliases") {
+      this.legacyReads++;
+    }
     return this.values.has(key) ? (this.values.get(key) as T) : defaultValue;
   }
 
@@ -15,6 +19,57 @@ class MemoryState implements AliasState {
     this.values.set(key, value);
   }
 }
+
+test("SessionAliasStore reads each legacy map once per batch", async () => {
+  const state = new MemoryState();
+  const workspace = new MemoryState();
+  const store = new SessionAliasStore(state, [workspace]);
+  const ids = Array.from(
+    { length: 50 },
+    (_, index) =>
+      `1111111${index % 10}-1111-4111-8111-11111111111${index % 10}`,
+  );
+
+  store.getAll(ids);
+  assert.equal(state.legacyReads, 1);
+  assert.equal(workspace.legacyReads, 1);
+
+  state.legacyReads = 0;
+  workspace.legacyReads = 0;
+  await store.migrate(ids);
+  assert.equal(state.legacyReads, 1);
+  assert.equal(workspace.legacyReads, 1);
+});
+
+test("SessionAliasStore keeps the same precedence for every source", () => {
+  const state = new MemoryState();
+  const workspace = new MemoryState();
+  const store = new SessionAliasStore(state, [workspace]);
+  const ids = ["a", "b", "c", "d", "e"];
+
+  state.values.set("agShowSessionId.sessionAlias.a", "primary direct");
+  state.values.set("agShowSessionId.sessionAliases", {
+    a: "primary legacy",
+    b: "primary legacy",
+  });
+  state.values.set("agShowSessionId.sessionAlias.c", null);
+  workspace.values.set("agShowSessionId.sessionAlias.c", "workspace direct");
+  workspace.values.set("agShowSessionId.sessionAlias.d", "workspace direct");
+  workspace.values.set("agShowSessionId.sessionAliases", {
+    d: "workspace legacy",
+    e: "workspace legacy",
+  });
+
+  assert.deepEqual(store.getAll(ids), {
+    a: "primary direct",
+    b: "primary legacy",
+    d: "workspace direct",
+    e: "workspace legacy",
+  });
+  for (const id of ids) {
+    assert.equal(store.get(id), store.getAll(ids)[id], id);
+  }
+});
 
 test("SessionAliasStore saves normalized aliases and clears them", async () => {
   const state = new MemoryState();

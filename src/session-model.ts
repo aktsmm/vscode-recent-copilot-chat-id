@@ -29,6 +29,7 @@ export function buildSessionRecords(
   sessions: readonly SavedSession[],
   index: ReadonlyMap<string, SessionIndexMetadata>,
   aliases: Readonly<Record<string, string>>,
+  t: (message: string, ...args: string[]) => string,
 ): SessionRecord[] {
   return sessions.map((session) => {
     const metadata = index.get(session.id);
@@ -39,7 +40,7 @@ export function buildSessionRecords(
       (metadataTitle
         ? truncateTitle(metadataTitle, MAX_SESSION_DISPLAY_TITLE_LENGTH)
         : undefined) ??
-      `Session ${shortenSessionId(session.id)}`;
+      t("Session {0}", shortenSessionId(session.id));
     const titleSource: SessionTitleSource = alias
       ? "alias"
       : metadataTitle
@@ -59,6 +60,19 @@ export function buildSessionRecords(
 
 export function truncateStatusTitle(title: string, maxLength = 40): string {
   return truncateTitle(title, maxLength);
+}
+
+/** Titles come from chat content, so they must never be parsed as Markdown. */
+export function escapeMarkdown(value: string): string {
+  return value.replaceAll(
+    /[\\`*_{}[\]()#+\-.!|<>~]/g,
+    (character) => `\\${character}`,
+  );
+}
+
+/** `$(name)` renders a codicon in status bar text, so neutralize it in titles. */
+export function stripStatusIcons(value: string): string {
+  return value.replaceAll(/\$(?=\()/g, "");
 }
 
 export function selectSessionRecord(

@@ -15,13 +15,15 @@
   "command.openSettings.title": "Open Settings",
   "command.enable.title": "Enable Filename Scanning",
   "command.enableTitles.title": "Enable Session Titles",
+  "command.enableAll.title": "Enable All Local Features",
   "view.container.title": "Recent Chat Sessions",
   "view.sessions.name": "Saved Sessions",
-  "view.welcome.disabled": "Filename scanning is off.\n[Enable](command:agShowSessionId.enable)\n[Open Settings](command:agShowSessionId.openSettings)",
+  "view.welcome.disabled": "Filename scanning is off.\n[Enable](command:agShowSessionId.enable)\n[Enable All Local Features](command:agShowSessionId.enableAll)\n[Open Settings](command:agShowSessionId.openSettings)",
   "view.welcome.empty": "No saved Copilot Chat sessions were found.\n[Refresh](command:agShowSessionId.refresh)",
   "view.welcome.unavailable": "Local session storage is unavailable in this window.\n[Open Log](command:agShowSessionId.showOutput)\n[Open Settings](command:agShowSessionId.openSettings)",
   "configuration.title": "Recent Copilot Chat ID",
   "configuration.enabled.description": "Enable read-only filename scanning of local Copilot Chat session storage on this machine. This setting is not synced, and chat content is never read.",
   "configuration.readTitles.description": "Read session titles and bounded timing, response-state, and changed-line metadata from VS Code's local chat index. Titles can be derived from chat content. Chat messages are never read, metadata remains in memory only, and this setting is not synced.",
-  "configuration.readUsage.description": "On demand, read the selected local Copilot Chat JSON/JSONL session file to show backend-reported AI Credits and input/output token usage, including per-model totals when available. Session files contain chat content, but only the usage summary is retained in memory. No data is sent over the network, and this setting is not synced. Disabling it clears cached usage and closes the open Session Inspector."
+  "configuration.readUsage.description": "When you explicitly ask for it, read the selected local Copilot Chat JSON/JSONL session file to show backend-reported AI Credits and input/output token usage, including per-model totals when available. Session files contain chat content, but only the usage summary is retained in memory. No data is sent over the network, and this setting is not synced. Analysis starts only from the Analyze AI Credits action unless agShowSessionId.analyzeUsageOnInspectorOpen is enabled. Disabling it clears cached usage and closes the open Session Inspector.",
+  "configuration.analyzeUsageOnInspectorOpen.description": "Also start AI Credits analysis when the Session Inspector opens, instead of only from the Analyze AI Credits action. Requires agShowSessionId.readUsage. When enabled, opening the Inspector reads the selected session file, which contains chat content; only the usage summary is retained in memory. This setting is not synced."
 }

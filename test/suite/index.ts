@@ -73,6 +73,45 @@ function verifySessionTreeProvider(): void {
     assert.equal(item.command?.arguments?.[0], session);
     assert.equal(item.accessibilityInformation?.role, "treeitem");
     assert.doesNotMatch(item.accessibilityInformation?.label ?? "", /\$\(/);
+    assert.equal((item.iconPath as vscode.ThemeIcon).id, "comment-discussion");
+    assert.equal((item.iconPath as vscode.ThemeIcon).color, undefined);
+
+    provider.setRecords([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        modifiedAt: Date.now() - 60_000,
+        displayTitle: "Authentication failure",
+        titleSource: "metadata",
+        metadata: {
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Authentication failure",
+          lastMessageDate: Date.now() - 60_000,
+          lastResponseState: "failed",
+        },
+      },
+    ]);
+    const failedItem = provider.getTreeItem(provider.getChildren()[0]);
+    const failedIcon = failedItem.iconPath as vscode.ThemeIcon;
+    assert.equal(failedIcon.id, "error");
+    assert.equal(failedIcon.color?.id, "list.errorForeground");
+    assert.match(
+      failedItem.accessibilityInformation?.label ?? "",
+      /Failed|失敗/,
+    );
+    assert.match(
+      (failedItem.tooltip as vscode.MarkdownString).value,
+      /Failed|失敗/,
+    );
+
+    provider.setRecords([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        modifiedAt: Date.now() - 60_000,
+        displayTitle: "Authentication failure",
+        titleSource: "metadata",
+      },
+    ]);
+    refreshes = 2;
 
     const details = provider.getChildren(session);
     assert.equal(details.length, 3);
@@ -780,6 +819,7 @@ export async function run(): Promise<void> {
     "agShowSessionId.openSettings",
     "agShowSessionId.enable",
     "agShowSessionId.enableTitles",
+    "agShowSessionId.enableAll",
   ]) {
     assert.ok(
       commands.includes(command),
@@ -839,7 +879,7 @@ export async function run(): Promise<void> {
     [
       `Extension Host smoke tests passed (${vscode.workspace.workspaceFolders ? "workspace window" : "empty window"}):`,
       "- extension activated",
-      "- fifteen commands registered",
+      "- sixteen commands registered",
       "- scanning disabled by default",
       "- opt-in refresh completed",
       "- output command completed",

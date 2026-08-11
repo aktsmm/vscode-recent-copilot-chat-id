@@ -110,3 +110,19 @@ test("record status shows the title and opens the session list", () => {
   assert.match(status.tooltip, /Select to show it in the session list/);
   assert.match(status.ariaLabel, /Activate to show it in the session list/);
 });
+
+test("record status neutralizes markdown and icons in chat-derived titles", () => {
+  const status = describeRecordStatus([
+    {
+      id: FIRST_ID,
+      modifiedAt: 300,
+      displayTitle: "$(zap) ![x](https://example.invalid/p)",
+      titleSource: "metadata",
+    },
+  ]);
+
+  assert.equal(status.text.match(/\$\(/g)?.length, 1);
+  assert.match(status.text, /^\$\(comment-discussion\) Recent: \(zap\)/);
+  assert.doesNotMatch(status.tooltip, /!\[x\]\(https/);
+  assert.match(status.tooltip, /\\!\\\[x\\\]\\\(https/);
+});

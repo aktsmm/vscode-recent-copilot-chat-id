@@ -72,10 +72,20 @@ export class SessionTreeProvider
     item.id = `chat-session:${row.id}`;
     item.description = row.description;
     item.tooltip = new vscode.MarkdownString(row.tooltip);
-    item.iconPath = new vscode.ThemeIcon("comment-discussion");
+    item.iconPath = new vscode.ThemeIcon(
+      row.icon,
+      row.iconColor ? new vscode.ThemeColor(row.iconColor) : undefined,
+    );
     item.contextValue = row.hasAlias ? "chatSessionWithAlias" : "chatSession";
     item.accessibilityInformation = {
-      label: vscode.l10n.t("Chat session {0}, {1}", row.label, row.description),
+      label: row.stateLabel
+        ? vscode.l10n.t(
+            "Chat session {0}, {1}, {2}",
+            row.label,
+            row.description,
+            row.stateLabel,
+          )
+        : vscode.l10n.t("Chat session {0}, {1}", row.label, row.description),
       role: "treeitem",
     };
     item.command = {

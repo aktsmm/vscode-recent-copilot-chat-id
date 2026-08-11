@@ -1,7 +1,7 @@
 # AI Credits Runtime Contract
 
-Date: 2026-08-06
-Status: runtime implementation complete in unreleased source; release not published
+Date: 2026-08-06, revised 2026-08-12
+Status: the credits contract shipped in 0.2.2; the Inspector-open opt-in and the index measurements below shipped in 0.3.0
 
 ## Decision
 
@@ -32,7 +32,9 @@ Sources:
 
 - `agShowSessionId.readUsage` is machine-scoped and defaults to `false`.
 - The extension prompts with an explicit disclosure before first use.
-- Analysis starts only from the selected session row's **Analyze AI Credits** action.
+- Analysis starts only from the selected session row's **Analyze AI Credits** action, or when the Session Inspector opens while the machine-scoped, default-off `agShowSessionId.analyzeUsageOnInspectorOpen` is enabled together with `readUsage`.
+- Opening the Inspector performs no session-file read when the opt-in is off; it renders the in-memory summary, if any, and otherwise reports `Not analyzed`.
+- An Inspector-initiated read is cancelled when the panel closes, when another session is opened, and when either setting is turned off. Cancellation never clears the shared usage cache.
 - Only `<selected UUID>.jsonl` or its legacy `.json` counterpart is considered.
 - The current `.jsonl` format is always preferred over its legacy `.json` sibling, regardless of modification time. Malformed or unsupported JSONL can fall back to the legacy snapshot, but identity mismatches and file-change checks fail closed.
 - The filename UUID must match the serialized session ID.
@@ -55,6 +57,19 @@ Sources:
 - source modification time
 
 Prompts, responses, references, titles, working directories, paths, and tool payloads may exist in the selected source file but are not returned by the parser, displayed, logged, persisted, or cached.
+
+## Index edit statistics availability
+
+The Inspector's changed-file and changed-line rows read `stats` from VS Code's `chat.ChatSessionStore.index`, and that field is usually absent.
+
+- `IChatSessionEntryMetadata.stats` is optional. Only the async `getSessionMetadata()` path assigns it, from `awaitStatsForSession()`.
+- `awaitStatsForSession()` returns `undefined` when the model has no live `editingSession`, and also when the accumulated diff has no files or zero added and removed lines.
+- `updateAndFlushIndexSync()` rebuilds entries with `getSessionMetadataSync()`, which never sets `stats`, so a synchronous shutdown flush drops previously stored values.
+- Measured 2026-08-12 on one Windows profile: 116 of 2,576 index entries across 148 workspace state databases carried `stats` (4.5%). A 17 MB session whose JSONL contained 341 `textEditGroup` occurrences still had none.
+
+The extension therefore reports `Not recorded by VS Code for this saved session` instead of a generic unavailable value, and does not reconstruct edit counts from session files. Edit operations recorded in a JSONL are not equivalent to VS Code's final editing-session diff, and parsing them would widen the usage-analysis output whitelist below.
+
+- https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/chat/common/chat.ts
 
 ## Limits
 

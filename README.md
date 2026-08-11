@@ -34,6 +34,7 @@ This extension shows a **recently saved** session ID. It does not claim to ident
 
 - Dedicated **Recent Chat Sessions** Activity Bar view
 - Session rows show a local title or VS Code title, short ID, and relative save time
+- Session rows carry the saved response state as an icon, a tooltip line, and a screen-reader label when VS Code recorded it
 - Expand a row to inspect the full ID, saved time, and title source
 - Inline and right-click actions to copy the title and ID together, inspect metadata, or set/clear a local title
 - Copy a session row as two lines: its display title, then `Session ID: <UUID>`
@@ -66,11 +67,13 @@ For a local build:
 5. Select the generated `artifacts/vsix/ag-show-session-id-<version>.vsix` and reload VS Code when prompted.
 
 > [!NOTE]
-> Local development builds and the Marketplace release use the same extension ID. Installing a local 0.2.2 VSIX in your normal profile replaces the installed 0.2.1 release. Use `npm run verify:install` for isolated verification, or reinstall the Marketplace version after manual testing.
+> Local development builds and the Marketplace release use the same extension ID, so installing a local VSIX in your normal profile replaces the installed Marketplace release. Use `npm run verify:install` for isolated verification, or reinstall the Marketplace version after manual testing.
 
 ## Enable
 
 Filename scanning is disabled by default. The extension offers to turn it on once per profile on first activation. You can also run any command and choose **Enable** in the prompt, or set `agShowSessionId.enabled` in User Settings.
+
+Every feature is a separate machine-local opt-in, so nothing is read until you say so. To turn all of them on at once, run **Enable All Local Features** from the Command Palette, the view toolbar, or the welcome view. It shows one modal that states exactly what each setting reads, and enables filename scanning, session titles, AI Credits analysis, and Inspector analysis on open only after you confirm. The toolbar button disappears once every opt-in is on.
 
 The extension then reads only `.json` and `.jsonl` **filenames** from the current window's local `chatSessions` storage directory. It reads file modification times for ordering.
 The opt-in setting is machine-scoped and is not synchronized to other devices.
@@ -79,27 +82,50 @@ Session titles are a separate opt-in. Enable `agShowSessionId.readTitles` from t
 
 AI Credits analysis is another machine-local opt-in. The Inspector shows **Not analyzed** until you run **Analyze AI Credits** on a session row. The command reads only that selected session's `.jsonl` or legacy `.json` file. Session files contain chat content; the extension reconstructs request/session credits and input/output token fields, including per-model totals when the backend provides them. It retains only the bounded usage summary in memory and does not display, log, persist, cache, or send prompts and responses. Reopening the same saved version of an analyzed session reuses the in-memory result. Disabling `agShowSessionId.readUsage` clears the cache and immediately closes the open Session Inspector.
 
+Opening the Inspector does not read a session file on its own. Set `agShowSessionId.analyzeUsageOnInspectorOpen` to `true` if you want the Inspector to start the analysis as it opens; it is off by default and takes effect only while `agShowSessionId.readUsage` is also on. With it enabled, the Inspector appears immediately as **Analyzing** and updates when the read finishes. Closing the Inspector, opening another session, or turning either setting off cancels the in-progress read.
+
+The Inspector groups its rows into **Session**, **Timing**, **Edits**, and **Usage** sections. The Edits section shows the three counts when VS Code recorded them, and a single explanatory row when it did not.
+
+**Changed files**, **Lines added**, and **Lines removed** come from VS Code's own chat index. VS Code records them only when a session is saved while a live editing session still reports a nonzero diff, and its synchronous shutdown flush rewrites entries without them. Most saved sessions therefore show **Not recorded by VS Code for this saved session**. The extension never estimates these numbers from chat content. See [research/20260806-ai-credits-fixture-gate.md](research/20260806-ai-credits-fixture-gate.md) for the measured behavior.
+
 The bounded session data is parsed in a local worker thread. Cancelling analysis or disabling usage reading terminates active parsing before it can update the cache or Inspector.
 
 If analysis fails, the Inspector identifies common causes such as a missing, changed, unsupported, or oversized session file. The warning action can open the diagnostic Output Channel for the detailed error code.
+
+Every user-facing string is localized, and a test proves each one has a Japanese translation. The Output Channel is deliberately left in English: it is a stable bug-report surface that logs safe error codes rather than UI copy.
 
 Display title precedence is: **local title > VS Code metadata title > Session `<short ID>`**. Local titles persist by session ID in the local VS Code profile, follow the session between empty and workspace windows, are not synchronized, and never modify Copilot Chat storage. Early 0.1 development aliases are migrated automatically.
 
 ## Commands
 
-| Command                                          | Purpose                                         |
-| ------------------------------------------------ | ----------------------------------------------- |
-| `Recent Copilot Chat ID: Refresh`                | Scan saved session filenames again              |
-| `Recent Copilot Chat ID: Copy Recent ID`         | Copy the most recently saved UUID               |
-| `Recent Copilot Chat ID: Show Saved IDs`         | List saved UUIDs and copy the selected one      |
-| `Recent Copilot Chat ID: Show Output`            | Open the diagnostic Output Channel              |
-| `Recent Copilot Chat ID: Open Session Browser`   | Reveal the recent session in the Activity Bar   |
-| `Recent Copilot Chat ID: Open Session Inspector` | Inspect bounded metadata for a selected session |
-| `Recent Copilot Chat ID: Analyze AI Credits`     | Analyze usage for one selected session          |
-| `Recent Copilot Chat ID: Show Details`           | Reveal and expand the selected session          |
-| `Recent Copilot Chat ID: Set Local Title`        | Add or rename a local-only session title        |
+| Command                                             | Purpose                                         |
+| --------------------------------------------------- | ----------------------------------------------- |
+| `Recent Copilot Chat ID: Refresh`                   | Scan saved session filenames again              |
+| `Recent Copilot Chat ID: Copy Recent ID`            | Copy the most recently saved UUID               |
+| `Recent Copilot Chat ID: Show Saved IDs`            | List saved UUIDs and copy the selected one      |
+| `Recent Copilot Chat ID: Show Output`               | Open the diagnostic Output Channel              |
+| `Recent Copilot Chat ID: Open Session Browser`      | Reveal the recent session in the Activity Bar   |
+| `Recent Copilot Chat ID: Open Session Inspector`    | Inspect bounded metadata for a selected session |
+| `Recent Copilot Chat ID: Analyze AI Credits`        | Analyze usage for one selected session          |
+| `Recent Copilot Chat ID: Set Local Title`           | Add or rename a local-only session title        |
+| `Recent Copilot Chat ID: Enable Session Titles`     | Turn on title metadata after a disclosure       |
+| `Recent Copilot Chat ID: Enable All Local Features` | Turn on every opt-in after one modal disclosure |
+| `Recent Copilot Chat ID: Open Settings`             | Open this extension's settings                  |
 
-Global commands appear in the Command Palette under the **Recent Copilot Chat ID** category. Session-specific copy, Inspector, AI Credits analysis, details, and local-title actions appear on session rows in the Activity Bar. The expanded Session ID detail has a separate UUID-only copy action.
+The table lists the Command Palette entries under the **Recent Copilot Chat ID** category. Session-specific copy, Inspector, AI Credits analysis, details, and local-title actions appear on session rows in the Activity Bar instead. The expanded Session ID detail has a separate UUID-only copy action.
+
+When a command needs a session and none was picked in the Activity Bar, the Quick Pick lists each session with its short ID, unusual response state, relative age, a most-recent marker, and a detail line carrying the full ID and last-saved time. Typing matches the description and the detail, so a full UUID finds its session.
+
+## Settings
+
+| Setting                                       | Default | What it reads                                                                          |
+| --------------------------------------------- | ------- | -------------------------------------------------------------------------------------- |
+| `agShowSessionId.enabled`                     | `false` | Session filenames and modification times in the local `chatSessions` directory         |
+| `agShowSessionId.readTitles`                  | `false` | A single `chat.ChatSessionStore.index` key/value from VS Code's local state database   |
+| `agShowSessionId.readUsage`                   | `false` | The one session file you select, keeping only the usage summary in memory              |
+| `agShowSessionId.analyzeUsageOnInspectorOpen` | `false` | The same session file, read automatically when the Inspector opens (needs `readUsage`) |
+
+All four are machine-scoped, are not synchronized, and stay off until you turn them on. **Enable All Local Features** turns on all four after one modal disclosure.
 
 ## Status bar states
 
@@ -120,7 +146,8 @@ Global commands appear in the Command Palette under the **Recent Copilot Chat ID
 - Diagnostic logs include only shortened ID prefixes, never full session IDs
 - Optional metadata reads one bounded index entry and retains only approved session ID, title, timing, response-state, and changed-line summary fields in memory
 - Optional usage analysis retains only a bounded usage summary in memory; disabling it clears the summary and closes the Inspector
-- The Session Inspector remains script-free and renders escaped text only
+- The Session Inspector remains script-free and renders escaped text only, and its webview is granted no local resource roots
+- Session titles come from chat content, so they are escaped before Markdown tooltips and stripped of icon syntax before the status bar, Quick Pick, and notifications
 
 ## Compatibility
 
@@ -130,6 +157,7 @@ Global commands appear in the Command Palette under the **Recent Copilot Chat ID
 - Empty windows (no folder open) read the separate global chat session storage
 - Virtual workspaces, VS Code for the Web, and some Remote/WSL layouts can report `unavailable`
 - This extension depends on an undocumented internal storage location and degrades without modifying data when that layout is unavailable
+- Session titles need the `node:sqlite` builtin, which every VS Code release in the supported range ships. It is still loaded lazily behind a guard, so an unexpected runtime without it logs `SessionIndexUnsupportedRuntime`, stops watching the index, and keeps filename scanning working instead of failing activation
 - VS Code does not expose a stable API to add actions to built-in Copilot Chat session rows, so this extension uses its own Activity Bar view
 
 The source workspace includes the API and storage analysis at `research/20260805-copilot-chat-session-id-extension.md`.

@@ -1,5 +1,38 @@
 # Change Log
 
+## 0.3.0 - 2026-08-12
+
+### Added
+
+- Add an Enable All Local Features action to the Command Palette, view toolbar, and welcome view that turns on every machine-local opt-in after one modal disclosure of what each setting reads.
+- Add the machine-scoped, default-off `agShowSessionId.analyzeUsageOnInspectorOpen` opt-in that starts usage analysis as the Inspector opens, showing an analyzing state until the read finishes.
+- Show the saved response state on Activity Bar session rows with a distinct icon, a tooltip line, and a screen-reader label, instead of the same icon for every session.
+
+### Changed
+
+- Group Session Inspector fields into Session, Timing, Edits, and Usage sections so a single flat list no longer has to be scanned end to end.
+- Collapse the three edit-statistic rows into one row when VS Code recorded no statistics, and explain the empty state with a dedicated value instead of the generic unavailable label.
+- Point the not-analyzed state at the Analyze AI Credits action so the usage rows are reachable from the Inspector.
+- Give every Command Palette session picker the same short ID, response state, relative age, most-recent marker, and full-ID detail that Show Saved IDs already had, and let all of them match on that detail.
+- Localize the fallback session title so a window without title metadata no longer shows an English label in the tree, pickers, Inspector, status bar, and clipboard.
+
+### Fixed
+
+- Stop reusing a cached usage summary after the session file changes or is deleted, refresh an open Inspector showing it, and stop re-reading a session file when the Inspector reopens an already analyzed session unless the new opt-in is enabled.
+- Cancel an Inspector-initiated usage read when the panel closes, another session is opened, or either usage setting is turned off, without clearing the shared usage cache.
+- Load the `node:sqlite` builtin lazily behind a guard so a runtime without it degrades to filename scanning instead of failing activation for every feature.
+- Reuse one date formatter per locale and resolve local titles from a single snapshot per batch, so rebuilding a large session list no longer rebuilds formatters and alias maps per row.
+
+### Security
+
+- Escape chat-derived session titles before they reach Markdown tooltips, and strip icon syntax before they reach the status bar, Quick Pick, and progress notifications, so a title can no longer render a link, an image request, or an icon.
+- Deny the Session Inspector webview every local resource root instead of inheriting the default workspace and extension access it never used.
+- Replace the regular-expression privacy gates with a TypeScript AST scan that walks every source file recursively and rejects indirect module loads, bracketed file-read access, network calls, non-literal message keys, and localized diagnostic logs.
+
+### Documentation
+
+- Document every setting in a table, list the two Command Palette entries that were missing, drop the session-row-only entry that never appeared there, and add a test that keeps both readmes in step with the manifest.
+
 ## 0.2.2 - 2026-08-09
 
 - Read request-level `copilotCredits`, `promptTokens`, and `completionTokens` used by normal Chat sessions instead of requiring Agent Host-only totals.

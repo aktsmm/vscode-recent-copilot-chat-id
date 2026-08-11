@@ -135,13 +135,16 @@ const expected = [
   "extension/images/sessions-activity.svg",
   "extension/l10n/bundle.l10n.ja.json",
   "extension/out/src/copy-session.js",
+  "extension/out/src/enable-all-features.js",
   "extension/out/src/extension.js",
+  "extension/out/src/inspector-usage-gate.js",
   "extension/out/src/session-alias-store.js",
   "extension/out/src/session-index.js",
   "extension/out/src/session-inspector-html.js",
   "extension/out/src/session-inspector-model.js",
   "extension/out/src/session-inspector.js",
   "extension/out/src/session-model.js",
+  "extension/out/src/session-quick-pick.js",
   "extension/out/src/session-scanner.js",
   "extension/out/src/session-tree-model.js",
   "extension/out/src/session-tree.js",
@@ -212,6 +215,18 @@ if (
 ) {
   throw new Error(
     "Packaged usage analysis opt-in must default off and remain machine-scoped.",
+  );
+}
+if (
+  packagedManifest.contributes.configuration.properties[
+    "agShowSessionId.analyzeUsageOnInspectorOpen"
+  ].default !== false ||
+  packagedManifest.contributes.configuration.properties[
+    "agShowSessionId.analyzeUsageOnInspectorOpen"
+  ].scope !== "machine"
+) {
+  throw new Error(
+    "Packaged Inspector analysis opt-in must default off and remain machine-scoped.",
   );
 }
 if (packagedManifest.enabledApiProposals !== undefined) {
