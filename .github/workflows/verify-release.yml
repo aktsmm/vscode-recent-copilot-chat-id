@@ -44,5 +44,6 @@ jobs:
         with:
           name: pinned-api-types
           path: .release-cache/*.tgz
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
