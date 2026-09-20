@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import {
   CHAT_SESSION_INDEX_KEY,
   loadSqliteModule,
@@ -16,6 +18,84 @@ import {
 } from "../src/session-index";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
+
+function isolatedIndex(loadSqlite: () => unknown) {
+  const filename = path.join(__dirname, "../src/session-index.js");
+  const localRequire = createRequire(filename);
+  const exports = {} as typeof import("../src/session-index");
+  let loadCount = 0;
+  runInNewContext(readFileSync(filename, "utf8"), {
+    exports,
+    Buffer,
+    require: (specifier: string) => {
+      if (specifier === "node:sqlite") {
+        loadCount++;
+        return loadSqlite();
+      }
+      return localRequire(specifier);
+    },
+  });
+  return {
+    index: exports,
+    get loadCount() {
+      return loadCount;
+    },
+  };
+}
+
+test("sqlite loads lazily and reuses its successful module for default index reads", () => {
+  const sqlite = { DatabaseSync };
+  const isolated = isolatedIndex(() => sqlite);
+  assert.equal(isolated.loadCount, 0);
+  assert.equal(isolated.index.loadSqliteModule(), sqlite);
+  assert.equal(isolated.index.loadSqliteModule(), sqlite);
+  withDatabase(
+    JSON.stringify({
+      version: 1,
+      entries: {
+        [SESSION_ID]: {
+          sessionId: SESSION_ID,
+          title: "Fixture title",
+          lastMessageDate: 1,
+        },
+      },
+    }),
+    (file) => {
+      const result = isolated.index.readSessionIndex(file);
+      assert.equal(result.errorCode, undefined);
+      assert.equal(result.entries.get(SESSION_ID)?.title, "Fixture title");
+    },
+  );
+  assert.equal(isolated.loadCount, 1);
+});
+
+test("default index reads memoize unavailable sqlite without exposing loader errors", () => {
+  const isolated = isolatedIndex(() => {
+    throw new Error("fixture loader failure with private diagnostic details");
+  });
+  assert.equal(isolated.loadCount, 0);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = isolated.index.readSessionIndex("unused-fixture-path");
+    assert.equal(result.errorCode, "SessionIndexUnsupportedRuntime");
+    assert.equal(result.entries.size, 0);
+    assert.deepEqual(Object.keys(result).sort(), ["entries", "errorCode"]);
+    assert.equal(isolated.index.loadSqliteModule(), undefined);
+  }
+  assert.equal(isolated.loadCount, 1);
+});
+
+test("sqlite failure memoization is isolated to the loaded module instance", () => {
+  const unavailable = isolatedIndex(() => {
+    throw new Error("unavailable");
+  });
+  assert.equal(unavailable.index.loadSqliteModule(), undefined);
+  const sqlite = { DatabaseSync };
+  const supported = isolatedIndex(() => sqlite);
+  assert.equal(supported.index.loadSqliteModule(), sqlite);
+  assert.equal(unavailable.index.loadSqliteModule(), undefined);
+  assert.equal(unavailable.loadCount, 1);
+  assert.equal(supported.loadCount, 1);
+});
 
 test("readSessionIndex degrades when the sqlite builtin is unavailable", () => {
   const result = readSessionIndex(

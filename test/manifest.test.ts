@@ -8,6 +8,38 @@ const manifest = JSON.parse(
   readFileSync(path.join(ROOT, "package.json"), "utf8"),
 );
 
+test("compatibility baseline stays aligned with pinned types, lockfile, and docs", () => {
+  assert.match(manifest.engines.vscode, /^\^1\.\d+\.\d+$/);
+  const minimumVersion = manifest.engines.vscode.slice(1);
+  assert.equal(minimumVersion, "1.105.0");
+  assert.equal(manifest.devDependencies["@types/vscode"], minimumVersion);
+  const lock = JSON.parse(
+    readFileSync(path.join(ROOT, "package-lock.json"), "utf8"),
+  );
+  assert.equal(lock.packages[""].engines.vscode, manifest.engines.vscode);
+  assert.equal(
+    lock.packages[""].devDependencies["@types/vscode"],
+    minimumVersion,
+  );
+  assert.equal(
+    lock.packages["node_modules/@types/vscode"].version,
+    minimumVersion,
+  );
+  for (const readme of ["README.md", "README.ja.md"]) {
+    const content = readFileSync(path.join(ROOT, readme), "utf8");
+    const label =
+      readme === "README.md"
+        ? "Minimum declared VS Code version"
+        : "宣言している最小 VS Code バージョン";
+    assert.ok(
+      content.split(/\r?\n/).includes(`- ${label}: ${minimumVersion}`),
+      `${readme} minimum version drifted`,
+    );
+    const badgeVersion = minimumVersion.split(".").slice(0, 2).join(".");
+    assert.ok(content.includes(`/VS%20Code/%3E%3D%20${badgeVersion}/blue`));
+  }
+});
+
 test("manifest exposes the Track A commands and opt-in setting", () => {
   assert.equal(manifest.publisher, "yamapan");
   assert.equal(manifest.preview, true);

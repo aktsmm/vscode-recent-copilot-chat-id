@@ -8,7 +8,7 @@
 	<a href="https://marketplace.visualstudio.com/items?itemName=yamapan.ag-show-session-id"><img alt="状態: プレビュー" src="https://badgen.net/badge/Status/Preview/orange"></a>
 	<a href="https://marketplace.visualstudio.com/items?itemName=yamapan.ag-show-session-id"><img alt="VS Marketplace バージョン" src="https://badgen.net/vs-marketplace/v/yamapan.ag-show-session-id"></a>
 	<a href="https://marketplace.visualstudio.com/items?itemName=yamapan.ag-show-session-id"><img alt="VS Marketplace インストール数" src="https://badgen.net/vs-marketplace/i/yamapan.ag-show-session-id"></a>
-	<a href="#互換性"><img alt="VS Code 1.125 以降" src="https://badgen.net/badge/VS%20Code/%3E%3D%201.125/blue"></a>
+	<a href="#互換性"><img alt="VS Code 1.105 以降" src="https://badgen.net/badge/VS%20Code/%3E%3D%201.105/blue"></a>
 	<a href="#プライバシー"><img alt="プライバシー: ローカルのみ" src="https://badgen.net/badge/Privacy/Local%20Only/green"></a>
 	<a href="README.md"><img alt="言語: 英語と日本語" src="https://badgen.net/badge/Languages/EN%20%7C%20JA/blue"></a>
 	<a href="LICENSE"><img alt="ライセンス: CC BY-NC-SA 4.0" src="https://badgen.net/badge/License/CC%20BY-NC-SA%204.0/gray"></a>
@@ -151,8 +151,8 @@ Activity Bar でセッションを選ばずにコマンドを実行した場合�
 
 ## 互換性
 
-- 宣言している最小 VS Code バージョン: 1.125.0
-- 動作確認済みの開発環境: Windows 11 上の VS Code 1.131.0
+- 宣言している最小 VS Code バージョン: 1.105.0
+- Extension Host 自動テスト: Windows 11 上の VS Code 1.105.0、ワークスペースと空のウィンドウの両方
 - デスクトップのローカルウィンドウのみ対応
 - 空のウィンドウ（フォルダー未オープン）では、グローバル側のチャットセッション保存領域を参照
 - 仮想ワークスペース、VS Code for the Web、一部の Remote / WSL 構成では `取得不可` になることがある
@@ -162,7 +162,22 @@ Activity Bar でセッションを選ばずにコマンドを実行した場合�
 
 API と保存領域の調査結果は、ソースワークスペースの `research/20260805-copilot-chat-session-id-extension.md` にあります。
 
+最小バージョンは互換性の下限であり、検証済みリリースの一覧ではありません。より新しい VS Code 1.x は未検証通知を出さずに許可します。ただし、内部保存形式の変更で個別機能に影響が出る可能性はあります。
+
+## トラブルシューティング
+
+1. **拡張が起動しない:** 拡張機能画面でインストール済みバージョンと VS Code の要求バージョンを確認します。0.3.0 は 1.125.0 を要求するため、最小バージョンを 1.105.0 に修正した 0.3.1 以降へ更新してください。修正版をインストールするまでは、API が動作しても manifest の指定で起動が拒否される場合があります。
+2. **走査が無効・一覧が空:** ファイル名の走査を明示的に有効化し、このウィンドウで Copilot Chat セッションを保存してから再スキャンします。一覧が空であることだけではエラーではありません。
+3. **保存領域が取得不可:** ログを表示、またはログを開く操作で拡張のログを確認します。未対応の構成では、デスクトップのローカルウィンドウでも確認してください。調査のために Copilot の保存領域を削除・変更しないでください。
+4. **タイトル・AI Credits が取得不可:** それぞれの読み取り設定を確認します。`SessionIndexUnsupportedRuntime` は、そのランタイムでタイトルメタデータを読めないことを示します。ファイル名の走査は継続します。使用量の分析エラーには理由とログへの導線が表示されます。記録されていない Credits は推計しません。
+
+解消しない場合は [GitHub で不具合を報告](https://github.com/aktsmm/vscode-recent-copilot-chat-id/issues/new) を使用してください。取得不可のビューにも同じリンクがあります。クリック後に公開 Issue の作成画面を開くだけで、診断情報の添付や投稿は自動実行しません。VS Code・拡張・OS のバージョン、ウィンドウ種別（ローカル・Remote・WSL）、再現手順、安全なエラーコードを記載してください。貼り付ける内容を確認し、セッションファイル、チャット本文、タイトル、完全なセッション ID、非公開パス、資格情報を含めないでください。
+
 ## 開発
+
+GitHub Actions の **Verify Release** は手動起動の検証専用workflowです。Windows・Node.js 22・public npm registryでリリースゲートを実行し、検証済みVSIXを成果物として保存します。公開処理は行わず、ビルドが追跡済みソースを変更した場合は失敗します。既存タグと同じ版はバージョンガードが拒否するため、リリースタグを作成する前に実行してください。
+
+行を指定したインスペクター・使用量分析・詳細表示でもディレクトリの列挙は行いますが、ファイルの更新時刻を問い合わせるのは選択 UUID と未登録 UUID だけです。他の既知セッションの時刻は監視イベントまたは全件再スキャンまで以前の値を維持し、行指定のない操作では全件を再確認します。1,000 セッションの合成データを使うコントローラーテストで、全走査の属性取得 1,000 回に対し、一覧を取得済みで単一ファイルのセッションを選択した場合は 1 回になることを確認しています。これは I/O 呼び出し回数の検証であり、実時間の速度向上率を保証するものではありません。
 
 ```powershell
 npm install

@@ -43,6 +43,27 @@ test("manifest declares the runtime l10n bundle folder", () => {
   assert.equal(manifest.l10n, "./l10n");
 });
 
+test("unavailable views and both readmes offer a data-free issue link", () => {
+  const issueUrl = `${manifest.bugs.url}/new`;
+  const parsed = new URL(issueUrl);
+  assert.equal(parsed.origin, "https://github.com");
+  assert.equal(parsed.search, "");
+  assert.equal(parsed.hash, "");
+  const surfaces = [
+    defaultNls["view.welcome.unavailable"],
+    japaneseNls["view.welcome.unavailable"],
+    readFileSync(path.join(ROOT, "README.md"), "utf8"),
+    readFileSync(path.join(ROOT, "README.ja.md"), "utf8"),
+  ];
+  for (const surface of surfaces) {
+    const links = [
+      ...surface.matchAll(/\]\((https:\/\/[^)]+\/issues\/new[^)]*)\)/g),
+    ];
+    assert.equal(links.length, 1);
+    assert.equal(links[0][1], issueUrl);
+  }
+});
+
 // Literal message keys, their translations, and the log policy are enforced by
 // the AST scan in source-policy.test.ts. These tests cover the runtime paths.
 test("every status bar string has a Japanese translation", () => {

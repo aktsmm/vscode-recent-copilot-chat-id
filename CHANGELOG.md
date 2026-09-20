@@ -1,5 +1,25 @@
 # Change Log
 
+## 0.3.1 - 2026-09-21
+
+### Changed
+
+- Reduce file-stat calls before selected-session Inspector, usage analysis, and reveal actions by reusing timestamps for other known sessions. Keep directory enumeration, selected-session and new-session checks, and full rescans for actions without a selection.
+
+### Fixed
+
+- Lower the declared VS Code minimum from 1.125.0 to 1.105.0, verified by both Extension Host modes; pin API types to that floor and derive test/install versions from the manifest.
+- Guard compatibility metadata against drift across the manifest, lockfile, API types, and readmes.
+- Verify packaged runtime code, translations and icons against the release build, and reject mismatched minimum versions or contribution metadata before distribution.
+- Verify lazy SQLite loading, successful and failed load memoization, and default index reads in isolated module tests without production cache-reset hooks.
+- Cover the controller's create/change/delete watcher callbacks with regression tests for usage invalidation, cancellation, and Inspector refresh across JSON and JSONL sessions.
+
+### Added
+
+- Add a GitHub issue link to the unavailable view in both languages, without attaching session data or submitting an issue automatically.
+- Add troubleshooting steps in both readmes and replace the development-version claim with the tested compatibility baseline.
+- Add a manually dispatched Windows release-verification workflow with read-only permissions, pinned Actions, and validated VSIX artifacts; it does not publish.
+
 ## 0.3.0 - 2026-08-12
 
 ### Added

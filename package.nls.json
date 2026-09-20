@@ -20,7 +20,7 @@
   "view.sessions.name": "Saved Sessions",
   "view.welcome.disabled": "Filename scanning is off.\n[Enable](command:agShowSessionId.enable)\n[Enable All Local Features](command:agShowSessionId.enableAll)\n[Open Settings](command:agShowSessionId.openSettings)",
   "view.welcome.empty": "No saved Copilot Chat sessions were found.\n[Refresh](command:agShowSessionId.refresh)",
-  "view.welcome.unavailable": "Local session storage is unavailable in this window.\n[Open Log](command:agShowSessionId.showOutput)\n[Open Settings](command:agShowSessionId.openSettings)",
+  "view.welcome.unavailable": "Local session storage is unavailable in this window.\n[Open Log](command:agShowSessionId.showOutput)\n[Open Settings](command:agShowSessionId.openSettings)\n[Report Issue on GitHub](https://github.com/aktsmm/vscode-recent-copilot-chat-id/issues/new)",
   "configuration.title": "Recent Copilot Chat ID",
   "configuration.enabled.description": "Enable read-only filename scanning of local Copilot Chat session storage on this machine. This setting is not synced, and chat content is never read.",
   "configuration.readTitles.description": "Read session titles and bounded timing, response-state, and changed-line metadata from VS Code's local chat index. Titles can be derived from chat content. Chat messages are never read, metadata remains in memory only, and this setting is not synced.",

@@ -3,5 +3,8 @@ out/
 .vscode-test/
 artifacts/vsix/
 *.vsix
-/.github/
+/.github/*
+!/.github/workflows/
+/.github/workflows/*
+!/.github/workflows/verify-release.yml
 /AGENTS.md

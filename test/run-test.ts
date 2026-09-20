@@ -8,7 +8,10 @@ import {
 } from "node:fs";
 import { downloadAndUnzipVSCode, runTests } from "@vscode/test-electron";
 
-const TEST_VERSION = "1.125.0";
+const manifest = JSON.parse(
+  readFileSync(path.resolve(__dirname, "../../package.json"), "utf8"),
+);
+const TEST_VERSION = manifest.engines.vscode.slice(1);
 
 function resolveProductPath(executablePath: string): string {
   const executableRoot = path.dirname(executablePath);

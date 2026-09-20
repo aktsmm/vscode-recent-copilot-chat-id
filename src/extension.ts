@@ -270,7 +270,7 @@ class RecentChatController implements vscode.Disposable {
     });
   }
 
-  async refresh(notify: boolean): Promise<void> {
+  async refresh(notify: boolean, requestedId?: string): Promise<void> {
     const generation = ++this.scanGeneration;
 
     if (!this.isEnabled()) {
@@ -310,7 +310,7 @@ class RecentChatController implements vscode.Disposable {
     this.startWatching(sessionDirectory);
 
     try {
-      const sessions = await this.readSessions(sessionDirectory);
+      const sessions = await this.readSessions(sessionDirectory, requestedId);
       if (this.isStale(generation)) {
         if (!this.disposed) {
           this.scheduleRefresh();
@@ -514,6 +514,7 @@ class RecentChatController implements vscode.Disposable {
 
   private async readSessions(
     sessionDirectory: vscode.Uri,
+    requestedId?: string,
   ): Promise<SavedSession[]> {
     let entries: [string, vscode.FileType][];
     try {
@@ -528,11 +529,23 @@ class RecentChatController implements vscode.Disposable {
       throw error;
     }
 
+    const knownTimes = requestedId
+      ? new Map(
+          this.sessions.map((session) => [session.id, session.modifiedAt]),
+        )
+      : undefined;
     const files = await Promise.all(
       entries.map(
         async ([name, type]): Promise<StoredSessionFile | undefined> => {
-          if ((type & vscode.FileType.File) === 0 || !parseSessionId(name)) {
+          const id = parseSessionId(name);
+          if ((type & vscode.FileType.File) === 0 || !id) {
             return undefined;
+          }
+
+          const cachedTime =
+            id !== requestedId ? knownTimes?.get(id) : undefined;
+          if (cachedTime !== undefined) {
+            return { name, modifiedAt: cachedTime };
           }
 
           try {
@@ -649,8 +662,8 @@ class RecentChatController implements vscode.Disposable {
     if (!(await this.ensureEnabled())) {
       return;
     }
-    await this.refresh(false);
     const requestedId = node?.kind === "session" ? node.record.id : undefined;
+    await this.refresh(false, requestedId);
     const record = selectSessionRecord(this.records, requestedId);
     if (requestedId && !record) {
       void vscode.window.showInformationMessage(
@@ -698,11 +711,11 @@ class RecentChatController implements vscode.Disposable {
     }
     const inspectorGeneration = ++this.usageAnalysisGeneration;
     this.cancelInspectorAnalysis();
-    await this.refresh(false);
+    const requestedId = node?.kind === "session" ? node.record.id : undefined;
+    await this.refresh(false, requestedId);
     if (inspectorGeneration !== this.usageAnalysisGeneration) {
       return;
     }
-    const requestedId = node?.kind === "session" ? node.record.id : undefined;
     const record = requestedId
       ? selectSessionRecord(this.records, requestedId)
       : await this.selectRecord();
@@ -790,14 +803,14 @@ class RecentChatController implements vscode.Disposable {
     }
     const analysisGeneration = ++this.usageAnalysisGeneration;
     this.cancelInspectorAnalysis();
-    await this.refresh(false);
+    const requestedId = node?.kind === "session" ? node.record.id : undefined;
+    await this.refresh(false, requestedId);
     if (
       !this.isUsageReadingEnabled() ||
       analysisGeneration !== this.usageAnalysisGeneration
     ) {
       return;
     }
-    const requestedId = node?.kind === "session" ? node.record.id : undefined;
     const record = requestedId
       ? selectSessionRecord(this.records, requestedId)
       : await this.selectRecord();

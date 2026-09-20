@@ -8,7 +8,7 @@
 	<a href="https://marketplace.visualstudio.com/items?itemName=yamapan.ag-show-session-id"><img alt="Status: Preview" src="https://badgen.net/badge/Status/Preview/orange"></a>
 	<a href="https://marketplace.visualstudio.com/items?itemName=yamapan.ag-show-session-id"><img alt="VS Marketplace version" src="https://badgen.net/vs-marketplace/v/yamapan.ag-show-session-id"></a>
 	<a href="https://marketplace.visualstudio.com/items?itemName=yamapan.ag-show-session-id"><img alt="VS Marketplace installs" src="https://badgen.net/vs-marketplace/i/yamapan.ag-show-session-id"></a>
-	<a href="#compatibility"><img alt="VS Code 1.125 or newer" src="https://badgen.net/badge/VS%20Code/%3E%3D%201.125/blue"></a>
+	<a href="#compatibility"><img alt="VS Code 1.105 or newer" src="https://badgen.net/badge/VS%20Code/%3E%3D%201.105/blue"></a>
 	<a href="#privacy"><img alt="Privacy: Local Only" src="https://badgen.net/badge/Privacy/Local%20Only/green"></a>
 	<a href="README.ja.md"><img alt="Languages: English and Japanese" src="https://badgen.net/badge/Languages/EN%20%7C%20JA/blue"></a>
 	<a href="LICENSE"><img alt="License: CC BY-NC-SA 4.0" src="https://badgen.net/badge/License/CC%20BY-NC-SA%204.0/gray"></a>
@@ -151,8 +151,8 @@ All four are machine-scoped, are not synchronized, and stay off until you turn t
 
 ## Compatibility
 
-- Minimum declared VS Code version: 1.125.0
-- Verified development environment: VS Code 1.131.0 on Windows 11
+- Minimum declared VS Code version: 1.105.0
+- Automated Extension Host tests: VS Code 1.105.0 on Windows 11, with both workspace and empty windows
 - Desktop local windows only
 - Empty windows (no folder open) read the separate global chat session storage
 - Virtual workspaces, VS Code for the Web, and some Remote/WSL layouts can report `unavailable`
@@ -162,7 +162,22 @@ All four are machine-scoped, are not synchronized, and stay off until you turn t
 
 The source workspace includes the API and storage analysis at `research/20260805-copilot-chat-session-id-extension.md`.
 
+The minimum is a compatibility floor, not a list of tested releases. Newer VS Code 1.x versions are allowed without an untested-version notification; internal storage changes can still affect individual features.
+
+## Troubleshooting
+
+1. **Extension cannot activate:** check its installed version and required VS Code version in Extensions. Version 0.3.0 requires 1.125.0; update to 0.3.1 or later for the corrected 1.105.0 minimum. Until a corrected build is installed, its manifest can block activation even when the APIs would work.
+2. **Scanning is off or the list is empty:** enable filename scanning explicitly, then use Refresh after saving a Copilot Chat session in this window. An empty list alone is not an error.
+3. **Storage is unavailable:** open the extension's log using Show Output or Open Log. Try a local desktop window if you are using an unsupported layout. Do not delete or modify Copilot storage to troubleshoot this extension.
+4. **Titles or AI Credits are unavailable:** check their separate opt-ins. `SessionIndexUnsupportedRuntime` means title metadata cannot be read in that runtime; filename scanning remains available. Usage analysis errors include a recovery reason and Show Output action. Missing credits are not estimated.
+
+Use [Report Issue on GitHub](https://github.com/aktsmm/vscode-recent-copilot-chat-id/issues/new) when the problem persists. The unavailable view offers the same link. It opens a public issue form only after you click; it does not attach diagnostics or submit anything. Include VS Code, extension and OS versions, the window type (local/Remote/WSL), reproduction steps, and the safe error code. Review anything you paste: do not include session files, chat text, titles, full session IDs, private paths, or credentials.
+
 ## Development
+
+The manually dispatched **Verify Release** GitHub Actions workflow runs the release gate on Windows with Node.js 22 and the public npm registry. It uploads the validated VSIX without publishing, and fails if building changes tracked source. Run it before creating a release tag, since the version guard rejects already-tagged versions.
+
+Selected-session Inspector, usage analysis, and reveal actions still enumerate the directory, but only query file timestamps for the selected UUID and previously unknown UUIDs. Other known timestamps stay as observed until watcher events or a full Refresh; actions without a selection retain full rescans. A synthetic 1,000-session controller test verifies 1,000 file-stat calls for a full scan versus one for a selected single-file session with a warm list. This is an I/O call-count check, not a wall-clock speed claim.
 
 ```powershell
 npm install

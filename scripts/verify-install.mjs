@@ -14,7 +14,7 @@ const vsix = path.join(
   `${manifest.name}-${manifest.version}.vsix`,
 );
 const options = {
-  version: "1.125.0",
+  version: manifest.engines.vscode.slice(1),
   cachePath: path.join(root, ".vscode-test"),
   reuseMachineInstall: false,
 };

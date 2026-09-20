@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inflateRawSync } from "node:zlib";
+import { verifyVsixContent } from "./verify-vsix-content.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceManifest = JSON.parse(
@@ -171,6 +172,12 @@ if (JSON.stringify(actual) !== JSON.stringify(expected)) {
 
 const packagedManifest = JSON.parse(
   readEntry(entries, "extension/package.json").toString("utf8"),
+);
+verifyVsixContent(
+  sourceManifest,
+  packagedManifest,
+  new Map([...entries.keys()].map((name) => [name, readEntry(entries, name)])),
+  (name) => readFileSync(path.join(root, name)),
 );
 if (
   packagedManifest.name !== sourceManifest.name ||
